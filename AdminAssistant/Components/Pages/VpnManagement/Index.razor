@@ -1,0 +1,354 @@
+﻿@page "/vpn-management"
+@attribute [Authorize(Policy = "KeyUserOnly")]
+@rendermode InteractiveServer
+
+@using System.Text
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.JSInterop
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+
+@inject IAdService AdService
+@inject IOuAccessService OuAccessService
+@inject AuthenticationStateProvider AuthProvider
+@inject IJSRuntime JS
+
+<PageTitle>VPN</PageTitle>
+
+<div class="d-flex align-items-center mb-4">
+    <span class="bi bi-shield-lock-fill me-2 fs-4 text-primary"></span>
+    <h3 class="mb-0">VPN</h3>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+            <button class="btn btn-outline-primary btn-sm" @onclick="LoadAllUsers" disabled="@isLoading">
+                <i class="bi bi-people-fill me-1"></i>Alle Benutzer laden
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" @onclick="ToggleAllSelections" disabled="@(!CanSelectAll)">
+                <i class="bi bi-check2-square me-1"></i>@(AllSelected ? "Alle abwählen" : "Alle markieren")
+            </button>
+            <button class="btn btn-success btn-sm" @onclick="GenerateHex64Strings" disabled="@(selectedUsers.Count == 0)">
+                <i class="bi bi-code-slash me-1"></i>HEX64 erzeugen
+            </button>
+            <button class="btn btn-outline-success btn-sm" @onclick="ExportCsvAsync" disabled="@(encodedResults.Count == 0)">
+                <i class="bi bi-filetype-csv me-1"></i>CSV Export
+            </button>
+        </div>
+
+        <div class="input-group">
+            <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
+            <input class="form-control border-start-0"
+                   value="@searchTerm"
+                   @oninput="OnSearchChanged"
+                   placeholder="User suchen (Name, SAM oder UPN; mind. 2 Zeichen)" />
+            @if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                <button class="btn btn-outline-secondary" @onclick="ClearSearch">✕</button>
+            }
+        </div>
+        <div class="form-text">Bei Suche werden nur passende Benutzer geladen; ohne Suche kannst du alle Benutzer laden.</div>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center py-4 text-muted">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+        Lade Benutzer...
+    </div>
+}
+else if (results == null)
+{
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-search fs-1 d-block mb-3"></i>
+        Entweder alle Benutzer laden oder nach einem einzelnen Benutzer suchen.
+    </div>
+}
+else
+{
+    <div class="row g-4 align-items-start">
+        <div class="col-12 col-xl-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-list-ul me-2"></i>@resultTitle</span>
+                    <span class="badge bg-primary">@results.Count Benutzer</span>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:48px;"></th>
+                                <th>Anzeigename</th>
+                                <th>UPN</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in results)
+                            {
+                                var upn = GetUpn(user);
+                                <tr>
+                                    <td>
+                                        <input type="checkbox"
+                                               class="form-check-input"
+                                               checked="@selectedUsers.Contains(user.SamAccountName)"
+                                               @onchange="(e) => ToggleSelection(user.SamAccountName, ParseCheckboxValue(e.Value))" />
+                                    </td>
+                                    <td>@user.DisplayName</td>
+                                    <td><code>@upn</code></td>
+                                    <td>
+                                        @if (user.IsEnabled)
+                                        {
+                                            <span class="badge bg-success">Enable</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Disable</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+            <div class="card shadow-sm h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-file-code me-2"></i>HEX64 Ergebnis</span>
+                    <span class="badge bg-success">@encodedResults.Count Einträge</span>
+                </div>
+
+                @if (encodedResults.Count == 0)
+                {
+                    <div class="card-body text-muted">Noch keine HEX64-Werte erzeugt.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Anzeigename</th>
+@*                                     <th>UPN</th>
+                                    <th>Status</th> *@
+                                    <th>HEX64</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in encodedResults)
+                                {
+                                    <tr>
+                                        <td>@item.DisplayName</td>
+@*                                         <td><code>@item.Upn</code></td>
+                                        <td>@item.Status</td> *@
+                                        <td><code>@item.Encoded</code></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading;
+    private bool isAdmin;
+    private string searchTerm = string.Empty;
+    private string resultTitle = "Benutzerliste";
+    private List<AdUserResult>? results;
+    private readonly HashSet<string> selectedUsers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private readonly List<EncodedVpnUser> encodedResults = new List<EncodedVpnUser>();
+
+    private bool CanSelectAll
+    {
+        get { return results != null && results.Count > 0; }
+    }
+
+    private bool AllSelected
+    {
+        get
+        {
+            if (!CanSelectAll || results == null)
+                return false;
+
+            return results.All(x => selectedUsers.Contains(x.SamAccountName));
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        isAdmin = authState.User.IsInRole(@"SP\GRP_Admin_AdminAssistant");
+    }
+
+    private async Task LoadAllUsers()
+    {
+        isLoading = true;
+        encodedResults.Clear();
+        StateHasChanged();
+
+        var allUsers = await AdService.GetAllUsersAsync();
+        results = allUsers
+            .Where(u => OuAccessService.CanAccessUser(u.DistinguishedName, isAdmin))
+            .OrderBy(u => u.DisplayName)
+            .ToList();
+
+        resultTitle = "Benutzerliste (Alle)";
+        selectedUsers.Clear();
+        isLoading = false;
+    }
+
+    private async Task OnSearchChanged(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? string.Empty;
+
+        if (searchTerm.Length < 2)
+        {
+            results = null;
+            selectedUsers.Clear();
+            return;
+        }
+
+        isLoading = true;
+        StateHasChanged();
+
+        var searchedUsers = await AdService.SearchUsersAsync(searchTerm);
+        results = searchedUsers
+            .Where(u => OuAccessService.CanAccessUser(u.DistinguishedName, isAdmin))
+            .OrderBy(u => u.DisplayName)
+            .ToList();
+
+        resultTitle = "Suchergebnisse für \"" + searchTerm + "\"";
+        selectedUsers.Clear();
+        isLoading = false;
+    }
+
+    private void ClearSearch()
+    {
+        searchTerm = string.Empty;
+        results = null;
+        selectedUsers.Clear();
+    }
+
+    private void ToggleSelection(string sam, bool isSelected)
+    {
+        if (isSelected)
+            selectedUsers.Add(sam);
+        else
+            selectedUsers.Remove(sam);
+    }
+
+    private void ToggleAllSelections()
+    {
+        if (!CanSelectAll || results == null)
+            return;
+
+        if (AllSelected)
+        {
+            selectedUsers.Clear();
+            return;
+        }
+
+        selectedUsers.Clear();
+        foreach (var user in results)
+            selectedUsers.Add(user.SamAccountName);
+    }
+
+    private void GenerateHex64Strings()
+    {
+        if (!CanSelectAll || results == null)
+            return;
+
+        encodedResults.Clear();
+
+        var selectedEntries = results
+            .Where(u => selectedUsers.Contains(u.SamAccountName))
+            .Select(u => new
+            {
+                DisplayName = u.DisplayName,
+                Upn = GetUpn(u),
+                Status = u.IsEnabled ? "Enable" : "Disable"
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.Upn))
+            .OrderBy(x => x.Upn)
+            .ToList();
+
+        foreach (var entry in selectedEntries)
+        {
+            encodedResults.Add(new EncodedVpnUser(
+                entry.DisplayName,
+                entry.Upn,
+                entry.Status,
+                EncodeHex64(entry.Upn)));
+        }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        if (encodedResults.Count == 0)
+            return;
+
+        var builder = new StringBuilder();
+        builder.AppendLine("DisplayName,UPN,Status,HEX64");
+
+        foreach (var item in encodedResults)
+            builder.AppendLine(Csv(item.DisplayName) + "," + Csv(item.Upn) + "," + Csv(item.Status) + "," + Csv(item.Encoded));
+
+        var bytes = Encoding.UTF8.GetBytes(builder.ToString());
+        var base64 = Convert.ToBase64String(bytes);
+        var filename = "vpn-hex64-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".csv";
+
+        await JS.InvokeVoidAsync("downloadBase64File", filename, "text/csv;charset=utf-8", base64);
+    }
+
+    private static bool ParseCheckboxValue(object? value)
+    {
+        if (value is bool boolValue)
+            return boolValue;
+
+        return string.Equals(value?.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Csv(string value)
+    {
+        var safe = (value ?? string.Empty).Replace("\"", "\"\"");
+        return "\"" + safe + "\"";
+    }
+
+    private static string GetUpn(AdUserResult user)
+    {
+        return string.IsNullOrWhiteSpace(user.UserPrincipalName) ? user.Email : user.UserPrincipalName;
+    }
+
+    private static string EncodeHex64(string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var hex = Convert.ToHexString(bytes);
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(hex));
+    }
+
+    private sealed class EncodedVpnUser
+    {
+        public string DisplayName { get; }
+        public string Upn { get; }
+        public string Status { get; }
+        public string Encoded { get; }
+
+        public EncodedVpnUser(string displayName, string upn, string status, string encoded)
+        {
+            DisplayName = displayName;
+            Upn = upn;
+            Status = status;
+            Encoded = encoded;
+        }
+    }
+}

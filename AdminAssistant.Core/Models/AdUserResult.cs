@@ -9,4 +9,7 @@ public class AdUserResult
     public bool IsEnabled { get; set; } = true;
     public bool IsLockedOut { get; set; } = false;
     public DateTime? LastLogon { get; set; }
+
+    //04032026
+    public string UserPrincipalName { get; set; } = string.Empty;
 }

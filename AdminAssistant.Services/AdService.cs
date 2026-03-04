@@ -110,6 +110,8 @@ public class AdService : IAdService
                     SamAccountName = u.SamAccountName ?? string.Empty,
                     DisplayName = u.DisplayName ?? u.SamAccountName ?? string.Empty,
                     Email = u.EmailAddress ?? string.Empty,
+                    //04032026
+                    UserPrincipalName = Get((u.GetUnderlyingObject() as System.DirectoryServices.DirectoryEntry)!, "userPrincipalName"),
                     DistinguishedName = u.DistinguishedName ?? string.Empty,
                     IsEnabled = u.Enabled ?? false,
                     IsLockedOut = u.IsAccountLockedOut(),
@@ -133,8 +135,9 @@ public class AdService : IAdService
             using var context = new PrincipalContext(ContextType.Domain, domain, serviceUser, servicePass);
             using var searcher = new PrincipalSearcher(new UserPrincipal(context)
             {
-                SamAccountName = $"*{searchTerm}*",
-                Enabled = true
+                //SamAccountName = $"*{searchTerm}*",
+                //Enabled = true
+                SamAccountName = $"*{searchTerm}*"
             });
 
             return searcher.FindAll()
@@ -145,6 +148,8 @@ public class AdService : IAdService
                     SamAccountName = u.SamAccountName ?? string.Empty,
                     DisplayName = u.DisplayName ?? u.SamAccountName ?? string.Empty,
                     Email = u.EmailAddress ?? string.Empty,
+                    //04032026
+                    UserPrincipalName = Get((u.GetUnderlyingObject() as System.DirectoryServices.DirectoryEntry)!, "userPrincipalName"),
                     DistinguishedName = u.DistinguishedName ?? string.Empty,
                     IsEnabled = u.Enabled ?? false,
                     IsLockedOut = u.IsAccountLockedOut(),
