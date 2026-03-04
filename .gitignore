@@ -3,6 +3,13 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# von Martin
+*.json
+*.launchSettings.json
+*.appsettings.json
+*.appsettings.Development.json
+*.appsettings.Production.json
+
 # User-specific files
 *.rsuser
 *.suo
@@ -361,3 +368,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/AdminAssistant/appsettings.json
+/AdminAssistant/adminassistant_dev.db
+/AdminAssistant/adminassistant_dev.db-shm
+/AdminAssistant/adminassistant_dev.db-wal
+/AdminAssistant/appsettings.Development.json
