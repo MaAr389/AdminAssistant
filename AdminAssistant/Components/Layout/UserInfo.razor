@@ -1,0 +1,23 @@
+﻿@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthProvider
+
+<span class="small text-muted">
+    Angemeldet als: <strong>@displayName</strong>
+</span>
+
+@code {
+    private string displayName = "unbekannt";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthProvider.GetAuthenticationStateAsync();
+        var user = state.User;
+
+        if (user?.Identity?.IsAuthenticated == true)
+        {
+            // AD-User: "SP\\user" -> nur SamAccountName anzeigen
+            var name = user.Identity.Name ?? "unbekannt";
+            displayName = name.Contains('\\') ? name.Split('\\')[1] : name;
+        }
+    }
+}

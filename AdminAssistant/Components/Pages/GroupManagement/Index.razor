@@ -1,0 +1,156 @@
+﻿@page "/group-management"
+@attribute [Authorize(Policy = "KeyUserOnly")]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+
+@inject IAdService AdService
+@inject IAuthorizationService AuthorizationService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Gruppenverwaltung</PageTitle>
+
+<div class="d-flex align-items-center mb-4">
+    <span class="bi bi-diagram-3-fill fs-2 text-primary me-3"></span>
+    <h3 class="mb-0">Gruppenverwaltung</h3>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header fw-semibold">
+        <i class="bi bi-search me-2"></i>Gruppe suchen
+    </div>
+    <div class="card-body">
+        <div class="input-group">
+            <input class="form-control" placeholder="Gruppenname..."
+                   value="@searchTerm"
+                   @oninput="OnSearchInput"
+                   @onkeydown="OnKeyDown" />
+            <button class="btn btn-primary" @onclick="Search" disabled="@isLoading">
+                @if (isLoading)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                }
+                else
+                {
+                    <i class="bi bi-search me-1"></i>
+                }
+                Suchen
+            </button>
+        </div>
+        @if (!isAdmin)
+        {
+            <small class="text-muted mt-1 d-block">
+                <i class="bi bi-info-circle me-1"></i>
+                Es werden nur freigegebene Gruppen angezeigt.
+            </small>
+        }
+    </div>
+</div>
+
+@if (results != null)
+{
+    <div class="mt-4">
+        @if (!results.Any())
+        {
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-inbox fs-1"></i>
+                <p class="mt-2">Keine Gruppen gefunden.</p>
+            </div>
+        }
+        else
+        {
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-people-fill me-2"></i>Ergebnisse</span>
+                    <span class="badge bg-secondary">@results.Count() Gruppen</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Name</th>
+                                <th>Beschreibung</th>
+                                <th class="text-end">Aktionen</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var group in results)
+                            {
+                                <tr>
+                                    <td>
+                                        <i class="bi bi-diagram-3 me-2 text-secondary"></i>
+                                        <strong>@group.Name</strong>
+                                    </td>
+                                    <td class="text-muted">@group.Description</td>
+                                    <td class="text-end">
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                @onclick="() => OpenGroup(group.Name)">
+                                            <i class="bi bi-arrow-right-circle me-1"></i>Öffnen
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string searchTerm = string.Empty;
+    private IEnumerable<AdGroupResult>? results;
+    private bool isLoading = false;
+    private bool isAdmin = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var result = await AuthorizationService.AuthorizeAsync(authState.User, "AdminOnly");
+        isAdmin = result.Succeeded;
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? string.Empty;
+
+        if (searchTerm.Length >= 2)
+        {
+            isLoading = true;
+            results = null;
+            results = await AdService.SearchGroupsAsync(searchTerm, isAdmin);
+            isLoading = false;
+        }
+        else
+        {
+            results = null;
+        }
+    }
+
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Search();
+    }
+
+    private async Task Search()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm) || searchTerm.Length < 2) return;
+
+        isLoading = true;
+        results = null;
+        results = await AdService.SearchGroupsAsync(searchTerm, isAdmin);
+        isLoading = false;
+    }
+
+    private void OpenGroup(string groupName)
+    {
+        Navigation.NavigateTo($"/group-management/{Uri.EscapeDataString(groupName)}");
+    }
+}

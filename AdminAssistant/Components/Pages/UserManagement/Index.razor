@@ -1,0 +1,206 @@
+﻿@page "/user-management"
+@attribute [Authorize(Policy = "KeyUserOnly")]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+
+@inject IAdService AdService
+@inject NavigationManager Navigation
+@inject IOuAccessService OuAccessService
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Benutzerverwaltung</PageTitle>
+
+<div class="d-flex align-items-center mb-4">
+    <span class="bi bi-people-fill me-2 fs-4 text-primary"></span>
+    <h3 class="mb-0">Benutzerverwaltung</h3>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="input-group mb-2">
+            <span class="input-group-text bg-white">
+                <i class="bi bi-search text-muted"></i>
+            </span>
+            <input class="form-control border-start-0"
+                   value="@searchTerm"
+                   @oninput="OnSearchInput"
+                   placeholder="Name oder SAM-Account eingeben (mind. 2 Zeichen)..." />
+            @if (!string.IsNullOrEmpty(searchTerm))
+            {
+                <button class="btn btn-outline-secondary" @onclick="ClearSearch">✕</button>
+            }
+        </div>
+        <button class="btn btn-outline-primary btn-sm" @onclick="LoadAllUsers" disabled="@isLoading">
+            <i class="bi bi-people-fill me-1"></i>Alle Benutzer anzeigen
+        </button>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center py-4 text-muted">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+        Lade Benutzer...
+    </div>
+}
+else if (results != null && !results.Any())
+{
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        Keine Benutzer gefunden.
+    </div>
+}
+else if (results != null)
+{
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>
+                <i class="bi bi-list-ul me-2"></i>
+                @if (showingAll)
+                {
+                    <span>Alle Benutzer</span>
+                }
+                else
+                {
+                    <span>Suchergebnisse für „@searchTerm"</span>
+                }
+            </span>
+            <span class="badge bg-primary">@results.Count() Benutzer</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Anzeigename</th>
+                        <th>SAM-Account</th>
+                        <th>Letztes Login</th>
+                        <th>Status</th>
+                        <th class="text-end">Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in results)
+                    {
+                        <tr>
+                            <td>
+                                <span class="bi bi-person-circle me-2 text-secondary"></span>
+                                @user.DisplayName
+                            </td>
+                            <td><code>@user.SamAccountName</code></td>
+                            <td class="text-muted">
+                                @(user.LastLogon.HasValue
+                                                        ? user.LastLogon.Value.ToString("dd.MM.yyyy HH:mm")
+                                                        : "–")
+                    </td>
+                    <td>
+                        @if (user.IsLockedOut)
+                                {
+                                    <span class="badge bg-danger">
+                                        <i class="bi bi-lock-fill me-1"></i>Gesperrt
+                                    </span>
+                                }
+                                else if (user.IsEnabled)
+                                {
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-check-circle-fill me-1"></i>Aktiv
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">
+                                        <i class="bi bi-slash-circle-fill me-1"></i>Inaktiv
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-primary me-1"
+                                        @onclick="() => OpenEdit(user.SamAccountName)">
+                                    <i class="bi bi-pencil-fill"></i> Bearbeiten
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => OpenDetails(user.SamAccountName)">
+                                    <i class="bi bi-eye-fill"></i> Details
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+else
+{
+    <div class="text-center py-5 text-muted">
+        <i class="bi bi-search fs-1 d-block mb-3"></i>
+        Gib einen Namen oder SAM-Account ein, oder lade alle Benutzer.
+    </div>
+}
+
+@code {
+    private string searchTerm = string.Empty;
+    private IEnumerable<AdUserResult>? results;
+    private bool isLoading = false;
+    private bool showingAll = false;
+    private bool isAdmin = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        //isAdmin = authState.User.IsInRole(@"ASD\GG_ADMIN_ADMIN_ASSISTANT_SP");
+        isAdmin = authState.User.IsInRole(@"SP\GRP_Admin_AdminAssistant");
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? string.Empty;
+        showingAll = false;
+
+        if (searchTerm.Length >= 2)
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            var allResults = await AdService.SearchUsersAsync(searchTerm);
+            results = allResults.Where(u =>
+                OuAccessService.CanAccessUser(u.DistinguishedName, isAdmin));
+
+            isLoading = false;
+        }
+        else
+        {
+            results = null;
+        }
+    }
+
+    private async Task LoadAllUsers()
+    {
+        isLoading = true;
+        showingAll = true;
+        searchTerm = string.Empty;
+        results = null;
+        StateHasChanged();
+
+        var allResults = await AdService.GetAllUsersAsync();
+        results = allResults.Where(u =>
+            OuAccessService.CanAccessUser(u.DistinguishedName, isAdmin));
+
+        isLoading = false;
+    }
+
+    private void ClearSearch()
+    {
+        searchTerm = string.Empty;
+        results = null;
+        showingAll = false;
+    }
+
+    private void OpenEdit(string sam) =>
+        Navigation.NavigateTo($"/user-management/edit/{sam}");
+
+    private void OpenDetails(string sam) =>
+        Navigation.NavigateTo($"/user-management/details/{sam}");
+}

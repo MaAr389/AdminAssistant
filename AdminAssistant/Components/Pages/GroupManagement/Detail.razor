@@ -1,0 +1,257 @@
+﻿@page "/group-management/{GroupName}"
+@attribute [Authorize(Policy = "KeyUserOnly")]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+
+@inject IAdService AdService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Gruppe: @GroupName</PageTitle>
+
+<div class="mb-4">
+    <button class="btn btn-outline-secondary btn-sm"
+            @onclick='() => Navigation.NavigateTo("/group-management")'>
+        <i class="bi bi-arrow-left"></i> Zurück
+    </button>
+</div>
+
+@if (group == null)
+{
+    <div class="text-center py-5 text-muted">
+        <div class="spinner-border me-2" role="status"></div>
+        Lade Gruppendaten...
+    </div>
+}
+else
+{
+    <!-- Header -->
+    <div class="d-flex align-items-center mb-4">
+        <span class="bi bi-people-fill fs-2 text-primary me-3"></span>
+        <div>
+            <h3 class="mb-0">@group.Name</h3>
+            @if (!string.IsNullOrEmpty(group.Description))
+            {
+                <small class="text-muted">@group.Description</small>
+            }
+        </div>
+        <span class="ms-3 badge bg-primary fs-6">
+            @group.Members.Count Mitglieder
+        </span>
+    </div>
+
+    @if (resultMessage != null)
+    {
+        <div class="alert @alertClass alert-dismissible fade show" role="alert">
+            @resultMessage
+            <button type="button" class="btn-close" @onclick="() => resultMessage = null"></button>
+        </div>
+    }
+
+    <div class="row g-3">
+
+        <!-- Mitgliederliste -->
+        <div class="col-md-7">
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-person-lines-fill me-2"></i>Mitglieder</span>
+                    <span class="badge bg-secondary">@group.Members.Count</span>
+                </div>
+                @if (!group.Members.Any())
+                {
+                    <div class="card-body text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-1"></i>
+                        <p class="mt-2">Keine Mitglieder in dieser Gruppe.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Anzeigename</th>
+                                    <th>SAM-Account</th>
+                                    <th class="text-end">Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var member in group.Members)
+                                {
+                                    <tr>
+                                        <td>
+                                            <i class="bi bi-person-circle me-2 text-secondary"></i>
+                                            @member.DisplayName
+                                        </td>
+                                        <td><code>@member.SamAccountName</code></td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    @onclick="() => RemoveMember(member.SamAccountName)">
+                                                <i class="bi bi-person-dash-fill me-1"></i>Entfernen
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Mitglied hinzufügen -->
+        <div class="col-md-5">
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-person-plus-fill me-2"></i>Mitglied hinzufügen
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Benutzer suchen</label>
+                        <input class="form-control" placeholder="SAM-Account oder Name..."
+                               value="@addSearchTerm"
+                               @oninput="OnAddSearchInput" />
+                    </div>
+
+                    @if (addSearchResults != null && addSearchResults.Any())
+                    {
+                        <div class="list-group mb-3">
+                            @foreach (var user in addSearchResults)
+                            {
+                                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+                                        @onclick="() => SelectUser(user)">
+                                    <div>
+                                        <i class="bi bi-person me-2"></i>
+                                        <strong>@user.DisplayName</strong>
+                                        <small class="text-muted ms-2">@user.SamAccountName</small>
+                                    </div>
+                                    <i class="bi bi-plus-circle text-success"></i>
+                                </button>
+                            }
+                        </div>
+                    }
+
+                    @if (selectedUser != null)
+                    {
+                        <div class="alert alert-info d-flex justify-content-between align-items-center py-2">
+                            <span>
+                                <i class="bi bi-person-check me-2"></i>
+                                <strong>@selectedUser.DisplayName</strong>
+                                <small class="ms-1">(@selectedUser.SamAccountName)</small>
+                            </span>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                    @onclick="() => selectedUser = null">✕</button>
+                        </div>
+
+                        <button class="btn btn-success w-100" @onclick="AddMember">
+                            <i class="bi bi-person-plus-fill me-2"></i>Zur Gruppe hinzufügen
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <!-- Gruppeninfo -->
+            <div class="card shadow-sm mt-3">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-info-circle me-2"></i>Gruppeninformationen
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-4 text-muted">Name</dt>
+                        <dd class="col-8">@group.Name</dd>
+
+                        <dt class="col-4 text-muted">DN</dt>
+                        <dd class="col-8">
+                            <small class="font-monospace text-muted" style="word-break:break-all;">
+                                @group.DistinguishedName
+                            </small>
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+    </div>
+}
+
+@code {
+    [Parameter] public string GroupName { get; set; } = string.Empty;
+
+    private AdGroupDetail? group;
+    private string? resultMessage;
+    private string alertClass = "alert-success";
+    private string addSearchTerm = string.Empty;
+    private IEnumerable<AdUserResult>? addSearchResults;
+    private AdUserResult? selectedUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGroup();
+    }
+
+    private async Task LoadGroup()
+    {
+        group = await AdService.GetGroupAsync(Uri.UnescapeDataString(GroupName));
+    }
+
+    private async Task OnAddSearchInput(ChangeEventArgs e)
+    {
+        addSearchTerm = e.Value?.ToString() ?? string.Empty;
+        if (addSearchTerm.Length >= 2)
+            addSearchResults = await AdService.SearchUsersAsync(addSearchTerm);
+        else
+            addSearchResults = null;
+    }
+
+    private void SelectUser(AdUserResult user)
+    {
+        selectedUser = user;
+        addSearchResults = null;
+        addSearchTerm = string.Empty;
+    }
+
+    private async Task<string> GetCurrentUser()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        return authState.User.Identity?.Name ?? "Unbekannt";
+    }
+
+    private async Task AddMember()
+    {
+        if (selectedUser == null) return;
+
+        var currentUser = await GetCurrentUser();
+        var success = await AdService.AddGroupMemberAsync(
+            Uri.UnescapeDataString(GroupName), selectedUser.SamAccountName, currentUser);
+
+        SetResult(success,
+            $"{selectedUser.DisplayName} erfolgreich hinzugefuegt.",
+            $"Fehler beim Hinzufuegen von {selectedUser.DisplayName}.");
+
+        selectedUser = null;
+        if (success) await LoadGroup();
+    }
+
+    private async Task RemoveMember(string samAccountName)
+    {
+        var currentUser = await GetCurrentUser();
+        var success = await AdService.RemoveGroupMemberAsync(
+            Uri.UnescapeDataString(GroupName), samAccountName, currentUser);
+
+        SetResult(success,
+            $"{samAccountName} erfolgreich entfernt.",
+            $"Fehler beim Entfernen von {samAccountName}.");
+
+        if (success) await LoadGroup();
+    }
+
+    private void SetResult(bool success, string ok, string fail)
+    {
+        alertClass = success ? "alert-success" : "alert-danger";
+        resultMessage = success ? "✅ " + ok : "❌ " + fail;
+    }
+}

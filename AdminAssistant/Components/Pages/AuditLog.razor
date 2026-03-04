@@ -1,0 +1,261 @@
+﻿@page "/audit-log"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+@using AdminAssistant.Core.Enums
+
+@inject IAuditLogService AuditLogService
+
+<PageTitle>Audit Log</PageTitle>
+
+<!-- Header -->
+<div class="d-flex align-items-center mb-4 gap-2">
+    <i class="bi bi-journal-text fs-3 text-primary"></i>
+    <div>
+        <h3 class="mb-0">Audit Log</h3>
+        <small class="text-muted">Protokoll aller durchgeführten Aktionen</small>
+    </div>
+</div>
+
+<!-- Filter Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">
+                    <i class="bi bi-calendar-event me-1"></i>Von
+                </label>
+                <InputDate class="form-control" @bind-Value="from" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">
+                    <i class="bi bi-calendar-check me-1"></i>Bis
+                </label>
+                <InputDate class="form-control" @bind-Value="to" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">
+                    <i class="bi bi-search me-1"></i>Suche
+                </label>
+                <input class="form-control" placeholder="Benutzer, Aktion, Service Account..."
+                       @bind="searchTerm" @bind:event="oninput" />
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" @onclick="LoadLogs">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Laden
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (logs == null)
+{
+    <div class="text-center py-5 text-muted">
+        <div class="spinner-border text-primary mb-3" role="status"></div>
+        <p>Logs werden geladen...</p>
+    </div>
+}
+else
+{
+    <!-- Statistik-Karten -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-primary text-white">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fs-4 fw-bold">@logs.Count()</div>
+                        <small>Gesamt</small>
+                    </div>
+                    <i class="bi bi-list-ul fs-2 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-success text-white">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fs-4 fw-bold">@logs.Count(l => l.Success)</div>
+                        <small>Erfolgreich</small>
+                    </div>
+                    <i class="bi bi-check-circle fs-2 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-danger text-white">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fs-4 fw-bold">@logs.Count(l => !l.Success)</div>
+                        <small>Fehlgeschlagen</small>
+                    </div>
+                    <i class="bi bi-x-circle fs-2 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-info text-white">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fs-4 fw-bold">@logs.Select(l => l.PerformedBy).Distinct().Count()</div>
+                        <small>Benutzer</small>
+                    </div>
+                    <i class="bi bi-people fs-2 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabelle -->
+    @if (!FilteredLogs.Any())
+    {
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox fs-1"></i>
+            <p class="mt-2">Keine Einträge im gewählten Zeitraum.</p>
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th><i class="bi bi-clock me-1"></i>Zeitstempel</th>
+                                <th><i class="bi bi-lightning me-1"></i>Aktion</th>
+                                <th><i class="bi bi-person me-1"></i>Ausgeführt von</th>
+                                <th><i class="bi bi-person-badge me-1"></i>Ziel-Benutzer</th>
+                                <th><i class="bi bi-gear me-1"></i>Service Account</th>
+                                <th class="text-center">Status</th>
+                                <th><i class="bi bi-card-text me-1"></i>Details</th>
+                                <th><i class="bi bi-exclamation-triangle me-1"></i>Fehler</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var log in FilteredLogs)
+                            {
+                                <tr class="@(log.Success ? "" : "table-danger")">
+                                    <td class="text-nowrap">
+                                        <small class="text-muted">
+                                            @log.Timestamp.ToLocalTime().ToString("dd.MM.yyyy")
+                                        </small><br />
+                                        <strong>@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</strong>
+                                    </td>
+                                    <td>
+                                        <span class="badge @GetActionBadgeClass(log.Action) rounded-pill">
+                                            @log.Action
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <i class="bi bi-person-circle me-1 text-secondary"></i>@log.PerformedBy
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(log.TargetUser))
+                                        {
+                                            <i class="bi bi-person-fill me-1 text-primary"></i>
+                                            @log.TargetUser
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">–</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <small class="text-muted font-monospace">@log.ExecutedVia</small>
+                                    </td>
+                                    <td class="text-center">
+                                        @if (log.Success)
+                                        {
+                                            <span class="badge bg-success rounded-pill">
+                                                <i class="bi bi-check-lg me-1"></i>OK
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger rounded-pill">
+                                                <i class="bi bi-x-lg me-1"></i>Fehler
+                                            </span>
+                                        }
+                                    </td>
+                                    <td style="max-width: 300px;">
+                                        @if (!string.IsNullOrEmpty(log.Details))
+                                        {
+                                            @foreach (var part in log.Details.Split(" | "))
+                                            {
+                                                <small class="d-block text-muted">
+                                                    <i class="bi bi-arrow-right-short"></i>@part
+                                                </small>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">–</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(log.ErrorMessage))
+                                        {
+                                            <span class="text-danger small">
+                                                <i class="bi bi-exclamation-circle me-1"></i>@log.ErrorMessage
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">–</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer text-muted small">
+                <i class="bi bi-info-circle me-1"></i>
+                @FilteredLogs.Count() von @logs.Count() Einträgen angezeigt
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private DateTime from = DateTime.Today.AddDays(-7);
+    private DateTime to = DateTime.Today.AddDays(1);
+    private IEnumerable<AuditLogEntry>? logs;
+    private string searchTerm = "";
+
+    private IEnumerable<AuditLogEntry> FilteredLogs => logs?
+        .Where(l => string.IsNullOrEmpty(searchTerm) ||
+            (l.PerformedBy?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true) ||
+            (l.TargetUser?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true) ||
+            (l.Action.ToString().Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) ||
+            (l.ExecutedVia?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true) ||
+            (l.Details?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true))
+        ?? Enumerable.Empty<AuditLogEntry>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogs();
+    }
+
+    private async Task LoadLogs()
+    {
+        logs = await AuditLogService.GetLogsAsync(from, to);
+    }
+
+    private string GetActionBadgeClass(AuditAction action) => action switch
+    {
+        AuditAction.PasswordReset => "bg-warning text-dark",
+        AuditAction.AccountUnlock => "bg-info text-dark",
+        AuditAction.AccountDisable => "bg-danger",
+        AuditAction.AccountEnable => "bg-success",
+        AuditAction.GroupMemberAdd => "bg-primary",
+        AuditAction.GroupMemberRemove => "bg-secondary",
+        AuditAction.UserAttributeUpdate => "bg-dark",
+        _ => "bg-secondary"
+    };
+}

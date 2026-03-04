@@ -1,0 +1,450 @@
+﻿@page "/user-management/edit/{SamAccountName}"
+@attribute [Authorize(Policy = "KeyUserOnly")]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+
+@inject IAdService AdService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager Navigation
+@inject IOuAccessService OuAccessService
+
+<PageTitle>Benutzer bearbeiten</PageTitle>
+
+<div class="mb-4">
+    <button class="btn btn-outline-secondary btn-sm" @onclick='() => Navigation.NavigateTo("/user-management")'>
+        <i class="bi bi-arrow-left"></i> Zurück
+    </button>
+</div>
+
+@if (user == null)
+{
+    <div class="text-center py-5 text-muted">
+        <div class="spinner-border me-2" role="status"></div>
+        Lade Benutzerdaten...
+    </div>
+}
+else if (!hasAccess)
+{
+    <div class="alert alert-danger mt-3">
+        <i class="bi bi-shield-x me-2"></i>
+        Du bist nicht berechtigt, diesen Benutzer zu bearbeiten.
+    </div>
+}
+else
+{
+    <!-- Header -->
+    <div class="d-flex align-items-center mb-4">
+        <span class="bi bi-person-circle fs-2 text-primary me-3"></span>
+        <div>
+            <h3 class="mb-0">@user.DisplayName</h3>
+            <small class="text-muted"><code>@user.SamAccountName</code></small>
+        </div>
+        <span class="ms-3 badge @(user.IsEnabled ? "bg-success" : "bg-danger") fs-6">
+            @(user.IsEnabled ? "✅ Aktiv" : "🚫 Deaktiviert")
+        </span>
+    </div>
+
+    @if (resultMessage != null)
+    {
+        <div class="alert @alertClass alert-dismissible fade show" role="alert">
+            @resultMessage
+            <button type="button" class="btn-close" @onclick="() => resultMessage = null"></button>
+        </div>
+    }
+
+    <div class="row g-3">
+
+        <!-- Linke Spalte: Attribute bearbeiten -->
+        <div class="col-md-7">
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-pencil-square me-2"></i>Attribute bearbeiten
+                </div>
+                <div class="card-body">
+
+                    <!-- Allgemein -->
+                    <h6 class="text-muted mb-3">
+                        <i class="bi bi-person me-1"></i>Allgemein
+                    </h6>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">E-Mail</label>
+                            <input class="form-control" @bind="editEmail"
+                                   placeholder="vorname.nachname@domain.de" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Rufnummer</label>
+                            <input class="form-control" @bind="editPhoneNumber"
+                                   placeholder="+49 385 123456" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Abteilung</label>
+                            <input class="form-control" @bind="editDepartment"
+                                   placeholder="z.B. IT, Verwaltung" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Position</label>
+                            <input class="form-control" @bind="editTitle"
+                                   placeholder="z.B. Sachbearbeiter" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Büro</label>
+                            <input class="form-control" @bind="editOffice"
+                                   placeholder="z.B. Raum 204" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Webseite</label>
+                            <input class="form-control" @bind="editWebsite"
+                                   placeholder="https://..." />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Beschreibung</label>
+                            <input class="form-control" @bind="editDescription"
+                                   placeholder="Kurze Beschreibung des Benutzers" />
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <!-- Adresse -->
+                    <h6 class="text-muted mb-3">
+                        <i class="bi bi-geo-alt me-1"></i>Adresse
+                    </h6>
+                    <div class="row g-3 mb-4">
+                        <div class="col-12">
+                            <label class="form-label">Straße</label>
+                            <input class="form-control" @bind="editStreet"
+                                   placeholder="Musterstraße 1" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">PLZ</label>
+                            <input class="form-control" @bind="editPostalCode"
+                                   placeholder="19055" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Ort</label>
+                            <input class="form-control" @bind="editCity"
+                                   placeholder="Schwerin" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Bundesland</label>
+                            <input class="form-control" @bind="editState"
+                                   placeholder="Mecklenburg-Vorpommern" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Region / Land</label>
+                            <input class="form-control" @bind="editCountry"
+                                   placeholder="Deutschland" />
+                        </div>
+                    </div>
+
+                    <button class="btn btn-success w-100" @onclick="SaveAttributes">
+                        <i class="bi bi-floppy-fill me-2"></i>Speichern
+                    </button>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Rechte Spalte: Schnellaktionen + Kennwort + Konto + AD -->
+        <div class="col-md-5">
+
+            <!-- Schnellaktionen -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-lightning-fill me-2"></i>Schnellaktionen
+                </div>
+                <div class="card-body d-flex flex-column gap-2">
+
+                    <button class="btn btn-warning btn-sm text-start text-dark"
+                            @onclick="TogglePasswordPanel">
+                        <i class="bi bi-key-fill me-2"></i>Kennwort zurücksetzen
+                    </button>
+
+                    @if (user.IsEnabled)
+                    {
+                        <button class="btn btn-danger btn-sm text-start" @onclick="DisableAccount">
+                            <i class="bi bi-slash-circle me-2"></i>Konto deaktivieren
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-success btn-sm text-start" @onclick="EnableAccount">
+                            <i class="bi bi-check-circle me-2"></i>Konto aktivieren
+                        </button>
+                    }
+
+                    @if (!user.MustChangePassword)
+                    {
+                        <button class="btn btn-secondary btn-sm text-start" @onclick="SetMustChange">
+                            <i class="bi bi-clock me-2"></i>Kennwortänderung erzwingen
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-outline-secondary btn-sm text-start" @onclick="UnsetMustChange">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i>Kennwortänderung aufheben
+                        </button>
+                    }
+
+                </div>
+            </div>
+
+            <!-- Kennwort-Panel direkt unter Schnellaktionen -->
+            @if (showPasswordForm)
+            {
+                <div class="card shadow-sm mb-3">
+                    <div class="card-header fw-semibold">
+                        <i class="bi bi-key-fill me-2"></i>Neues Kennwort setzen
+                    </div>
+                    <div class="card-body">
+                        <input class="form-control mb-3" type="password"
+                               @bind="newPassword"
+                               placeholder="Neues Kennwort (min. 8 Zeichen)" />
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary"
+                                    @onclick="ResetPassword"
+                                    disabled="@(string.IsNullOrEmpty(newPassword) || newPassword.Length < 8)">
+                                <i class="bi bi-check-lg me-1"></i>Setzen
+                            </button>
+                            <button class="btn btn-outline-secondary"
+                                    @onclick="CancelPasswordPanel">
+                                Abbrechen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- Kontoinformationen -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-info-circle me-2"></i>Kontoinformationen
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-5 text-muted">Letzter Login</dt>
+                        <dd class="col-7">
+                            @(user.LastLogon.HasValue
+                                ? user.LastLogon.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                : "–")
+                        </dd>
+
+                        <dt class="col-5 text-muted">Konto läuft ab</dt>
+                        <dd class="col-7">
+                            @(user.AccountExpires.HasValue
+                                ? user.AccountExpires.Value.ToLocalTime().ToString("dd.MM.yyyy")
+                                : "Kein Ablauf")
+                        </dd>
+
+                        <dt class="col-5 text-muted">PW bei Anmeldung</dt>
+                        <dd class="col-7">
+                            @if (user.MustChangePassword)
+                            {
+                                <span class="badge bg-warning text-dark">Ja</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Nein</span>
+                            }
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Active Directory -->
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-diagram-3 me-2"></i>Active Directory
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-4 text-muted">Distinguished Name</dt>
+                        <dd class="col-8">
+                            <small class="text-muted font-monospace" style="word-break:break-all;">
+                                @user.DistinguishedName
+                            </small>
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+
+        </div> <!-- /rechte Spalte -->
+
+    </div> <!-- /row -->
+}
+
+@code {
+    [Parameter] public string SamAccountName { get; set; } = string.Empty;
+
+    private AdUserDetail? user;
+    private string? resultMessage;
+    private string alertClass = "alert-success";
+    private bool showPasswordForm = false;
+    private bool hasAccess = false;
+    private string newPassword = string.Empty;
+
+    // Bestehende Edit-Felder
+    private string editEmail = string.Empty;
+    private string editDepartment = string.Empty;
+    private string editTitle = string.Empty;
+
+    // Neue Edit-Felder
+    private string editDescription = string.Empty;
+    private string editOffice = string.Empty;
+    private string editPhoneNumber = string.Empty;
+    private string editWebsite = string.Empty;
+    private string editStreet = string.Empty;
+    private string editCity = string.Empty;
+    private string editState = string.Empty;
+    private string editPostalCode = string.Empty;
+    private string editCountry = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await AdService.GetUserAsync(SamAccountName);
+        if (user != null)
+        {
+            editEmail = user.Email;
+            editDepartment = user.Department;
+            editTitle = user.Title;
+            editDescription = user.Description;
+            editOffice = user.Office;
+            editPhoneNumber = user.PhoneNumber;
+            editWebsite = user.Website;
+            editStreet = user.Street;
+            editCity = user.City;
+            editState = user.State;
+            editPostalCode = user.PostalCode;
+            editCountry = user.Country;
+
+            var authState = await AuthProvider.GetAuthenticationStateAsync();
+            var principal = authState.User;
+
+            // Admin-Gruppen hier bei Bedarf anpassen
+            //var isAdminAssistant = principal.IsInRole(@"ASD\GG_ADMIN_ADMIN_ASSISTANT_SP");
+            var isAdminAssistant = principal.IsInRole(@"SP\GRP_Admin_AdminAssistant");
+
+            var isAdmin = isAdminAssistant;
+
+            if (isAdmin)
+            {
+                hasAccess = true;
+            }
+            else
+            {
+                hasAccess = OuAccessService.CanAccessUser(user.DistinguishedName, isAdmin);
+            }
+        }
+    }
+
+    private async Task<string> GetKeyUser()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        return authState.User.Identity?.Name ?? "Unbekannt";
+    }
+
+    private async Task SaveAttributes()
+    {
+        var keyUser = await GetKeyUser();
+        var success = await AdService.UpdateUserAttributesAsync(
+            SamAccountName,
+            editEmail,
+            editDepartment,
+            editTitle,
+            editDescription,
+            editOffice,
+            editPhoneNumber,
+            editWebsite,
+            editStreet,
+            editCity,
+            editState,
+            editPostalCode,
+            editCountry,
+            keyUser);
+
+        SetResult(success, "Attribute erfolgreich gespeichert.", "Fehler beim Speichern.");
+
+        if (success && user != null)
+        {
+            user.Email = editEmail;
+            user.Department = editDepartment;
+            user.Title = editTitle;
+            user.Description = editDescription;
+            user.Office = editOffice;
+            user.PhoneNumber = editPhoneNumber;
+            user.Website = editWebsite;
+            user.Street = editStreet;
+            user.City = editCity;
+            user.State = editState;
+            user.PostalCode = editPostalCode;
+            user.Country = editCountry;
+        }
+    }
+
+    private void TogglePasswordPanel()
+    {
+        showPasswordForm = !showPasswordForm;
+        if (!showPasswordForm)
+        {
+            newPassword = string.Empty;
+        }
+    }
+
+    private void CancelPasswordPanel()
+    {
+        showPasswordForm = false;
+        newPassword = string.Empty;
+    }
+
+    private async Task ResetPassword()
+    {
+        var keyUser = await GetKeyUser();
+        var success = await AdService.ResetPasswordAsync(SamAccountName, newPassword, keyUser);
+        SetResult(success, "Kennwort erfolgreich zurückgesetzt.", "Fehler beim Kennwort-Reset.");
+        showPasswordForm = false;
+        newPassword = string.Empty;
+    }
+
+    private async Task EnableAccount()
+    {
+        var keyUser = await GetKeyUser();
+        var success = await AdService.SetAccountEnabledAsync(SamAccountName, true, keyUser);
+        SetResult(success, "Konto erfolgreich aktiviert.", "Fehler beim Aktivieren.");
+        if (success && user != null) user.IsEnabled = true;
+    }
+
+    private async Task DisableAccount()
+    {
+        var keyUser = await GetKeyUser();
+        var success = await AdService.SetAccountEnabledAsync(SamAccountName, false, keyUser);
+        SetResult(success, "Konto erfolgreich deaktiviert.", "Fehler beim Deaktivieren.");
+        if (success && user != null) user.IsEnabled = false;
+    }
+
+    private async Task SetMustChange()
+    {
+        var keyUser = await GetKeyUser();
+        var success = await AdService.SetMustChangePasswordAsync(SamAccountName, true, keyUser);
+        SetResult(success, "Kennwortänderung bei Anmeldung erzwungen.", "Fehler.");
+        if (success && user != null) user.MustChangePassword = true;
+    }
+
+    private async Task UnsetMustChange()
+    {
+        var keyUser = await GetKeyUser();
+        var success = await AdService.SetMustChangePasswordAsync(SamAccountName, false, keyUser);
+        SetResult(success, "Kennwortänderung aufgehoben.", "Fehler.");
+        if (success && user != null) user.MustChangePassword = false;
+    }
+
+    private void SetResult(bool success, string ok, string fail)
+    {
+        alertClass = success ? "alert-success" : "alert-danger";
+        resultMessage = success ? $"✅ {ok}" : $"❌ {fail}";
+    }
+}

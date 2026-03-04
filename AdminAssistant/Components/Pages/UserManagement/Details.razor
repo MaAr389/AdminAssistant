@@ -1,0 +1,350 @@
+﻿@page "/user-management/details/{SamAccountName}"
+@attribute [Authorize(Policy = "KeyUserOnly")]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+@using System.Security.Cryptography
+@using System.Text
+
+@inject IAdService AdService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Benutzerdetails</PageTitle>
+
+<div class="mb-4">
+    <button class="btn btn-outline-secondary btn-sm" @onclick='() => Navigation.NavigateTo("/user-management")'>
+        <i class="bi bi-arrow-left"></i> Zurück
+    </button>
+</div>
+
+@if (user == null)
+{
+    <div class="text-center py-5 text-muted">
+        <div class="spinner-border me-2" role="status"></div>
+        Lade Benutzerdaten...
+    </div>
+}
+else
+{
+    <!-- Header -->
+    <div class="d-flex align-items-center mb-4">
+        <span class="bi bi-person-circle fs-2 text-primary me-3"></span>
+        <div>
+            <h3 class="mb-0">@user.DisplayName</h3>
+            <small class="text-muted"><code>@user.SamAccountName</code></small>
+        </div>
+        <span class="ms-3 badge @(user.IsEnabled ? "bg-success" : "bg-danger") fs-6">
+            @(user.IsEnabled ? "✅ Aktiv" : "🚫 Deaktiviert")
+        </span>
+    </div>
+
+    <div class="row g-3">
+
+        <!-- Linke Spalte: Allgemeine Infos + Adresse -->
+        <div class="col-md-6">
+
+            <!-- Allgemeine Informationen -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-person me-2"></i>Allgemeine Informationen
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-5 text-muted">E-Mail</dt>
+                        <dd class="col-7">@Val(user.Email)</dd>
+
+                        <dt class="col-5 text-muted">Rufnummer</dt>
+                        <dd class="col-7">@Val(user.PhoneNumber)</dd>
+
+                        <dt class="col-5 text-muted">Abteilung</dt>
+                        <dd class="col-7">@Val(user.Department)</dd>
+
+                        <dt class="col-5 text-muted">Position</dt>
+                        <dd class="col-7">@Val(user.Title)</dd>
+
+                        <dt class="col-5 text-muted">Büro</dt>
+                        <dd class="col-7">@Val(user.Office)</dd>
+
+                        <dt class="col-5 text-muted">Webseite</dt>
+                        <dd class="col-7">
+                            @if (!string.IsNullOrEmpty(user.Website))
+                            {
+                                <a href="@user.Website" target="_blank" rel="noopener">
+                                    @user.Website
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="text-muted">–</span>
+                            }
+                        </dd>
+
+                        <dt class="col-5 text-muted">Beschreibung</dt>
+                        <dd class="col-7">@Val(user.Description)</dd>
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Adresse -->
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-geo-alt me-2"></i>Adresse
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-5 text-muted">Straße</dt>
+                        <dd class="col-7">@Val(user.Street)</dd>
+
+                        <dt class="col-5 text-muted">PLZ / Ort</dt>
+                        <dd class="col-7">
+                            @if (!string.IsNullOrEmpty(user.PostalCode) || !string.IsNullOrEmpty(user.City))
+                            {
+                                @($"{user.PostalCode} {user.City}".Trim())
+                            }
+                            else
+                            {
+                                <span class="text-muted">–</span>
+                            }
+                        </dd>
+
+                        <dt class="col-5 text-muted">Bundesland</dt>
+                        <dd class="col-7">@Val(user.State)</dd>
+
+                        <dt class="col-5 text-muted">Region / Land</dt>
+                        <dd class="col-7">@Val(user.Country)</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rechte Spalte: Kontostatus + Kennwort + AD -->
+        <div class="col-md-6">
+
+            <!-- Kontostatus -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-shield-lock me-2"></i>Kontostatus
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-6 text-muted">Status</dt>
+                        <dd class="col-6">
+                            @if (user.IsEnabled)
+                            {
+                                <span class="badge bg-success">✅ Aktiv</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-danger">🚫 Deaktiviert</span>
+                            }
+                        </dd>
+
+                        <dt class="col-6 text-muted">PW bei Anmeldung ändern</dt>
+                        <dd class="col-6">
+                            @if (user.MustChangePassword)
+                            {
+                                <span class="badge bg-warning text-dark">⏰ Ja</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Nein</span>
+                            }
+                        </dd>
+
+                        <dt class="col-6 text-muted">Letzter Login</dt>
+                        <dd class="col-6">
+                            @(user.LastLogon.HasValue
+                                ? user.LastLogon.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                : "–")
+                        </dd>
+
+                        <dt class="col-6 text-muted">Konto läuft ab</dt>
+                        <dd class="col-6">
+                            @(user.AccountExpires.HasValue
+                                ? user.AccountExpires.Value.ToLocalTime().ToString("dd.MM.yyyy")
+                                : "Kein Ablauf")
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Neues Kennwort setzen -->
+            <div class="card shadow-sm mb-3">
+                <div class="card-header fw-semibold d-flex align-items-center justify-content-between">
+                    <span>
+                        <i class="bi bi-key-fill me-2"></i>Neues Kennwort setzen
+                    </span>
+                    <button type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            @onclick="GeneratePassword"
+                            title="Zufälliges Kennwort generieren">
+                        <i class="bi bi-magic"></i>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <label class="form-label">Neues Kennwort</label>
+                        <div class="d-flex gap-2">
+                            <input type="password"
+                                   class="form-control"
+                                   @bind="newPassword"
+                                   id="newPasswordInput" />
+                            <button type="button"
+                                    class="btn btn-outline-secondary"
+                                    title="In Zwischenablage kopieren"
+                                    @onclick="CopyPasswordToClipboard">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Wiederholen</label>
+                        <input type="password" class="form-control"
+                               @bind="newPasswordRepeat" />
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox"
+                                   id="mustChangePw"
+                                   @bind="mustChangePassword" />
+                            <label class="form-check-label" for="mustChangePw">
+                                Benutzer muss Kennwort ändern
+                            </label>
+                        </div>
+                        <button class="btn btn-warning"
+                                @onclick="ResetPassword"
+                                disabled="@isResettingPassword">
+                            <i class="bi bi-arrow-repeat me-1"></i>
+                            Kennwort setzen
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(copyInfo))
+                    {
+                        <div class="mt-2 small text-muted">
+                            @copyInfo
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Active Directory -->
+            <div class="card shadow-sm">
+                <div class="card-header fw-semibold">
+                    <i class="bi bi-diagram-3 me-2"></i>Active Directory
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-3 text-muted">Distinguished Name</dt>
+                        <dd class="col-9">
+                            <small class="font-monospace text-muted" style="word-break:break-all;">
+                                @user.DistinguishedName
+                            </small>
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+
+        </div> <!-- /rechte Spalte -->
+
+    </div> <!-- /row -->
+
+    <div class="mt-3">
+        <button class="btn btn-primary"
+                @onclick='() => Navigation.NavigateTo($"/user-management/edit/{user.SamAccountName}")'>
+            <i class="bi bi-pencil-fill me-1"></i> Bearbeiten
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public string SamAccountName { get; set; } = string.Empty;
+    private AdUserDetail? user;
+
+    private string newPassword = string.Empty;
+    private string newPasswordRepeat = string.Empty;
+    private bool mustChangePassword = true;
+    private bool isResettingPassword = false;
+    private string? copyInfo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await AdService.GetUserAsync(SamAccountName);
+    }
+
+    private static string Val(string? value) =>
+        string.IsNullOrEmpty(value) ? "–" : value;
+
+    private async Task ResetPassword()
+    {
+        if (user == null) return;
+
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword != newPasswordRepeat)
+        {
+            copyInfo = "Kennwörter sind leer oder stimmen nicht überein.";
+            return;
+        }
+
+        isResettingPassword = true;
+
+        // TODO: aktuellen ausführenden Benutzer übergeben
+        var success = await AdService.ResetPasswordAsync(user.SamAccountName, newPassword, "GUI-User");
+
+        if (success && mustChangePassword)
+        {
+            await AdService.SetMustChangePasswordAsync(user.SamAccountName, true, "GUI-User");
+        }
+
+        isResettingPassword = false;
+        newPassword = string.Empty;
+        newPasswordRepeat = string.Empty;
+        copyInfo = "Kennwort wurde gesetzt.";
+    }
+
+    private void GeneratePassword()
+    {
+        newPassword = GenerateSecurePassword(16, includeSpecial: true);
+        newPasswordRepeat = newPassword;
+        copyInfo = "Kennwort generiert und in beide Felder übernommen.";
+    }
+
+    private static string GenerateSecurePassword(int length, bool includeSpecial)
+    {
+        const string lower = "abcdefghijklmnopqrstuvwxyz";
+        const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const string numbers = "0123456789";
+        const string special = "!@#$%^&*()-_=+[]{}";
+
+        var chars = lower + upper + numbers + (includeSpecial ? special : string.Empty);
+
+        var bytes = new byte[length * 4];
+        RandomNumberGenerator.Fill(bytes);
+
+        var sb = new StringBuilder(length);
+
+        for (int i = 0; i < length; i++)
+        {
+            uint value = BitConverter.ToUInt32(bytes, i * 4);
+            var idx = (int)(value % chars.Length);
+            sb.Append(chars[idx]);
+        }
+
+        return sb.ToString();
+    }
+
+    private async Task CopyPasswordToClipboard()
+    {
+        if (string.IsNullOrEmpty(newPassword))
+        {
+            copyInfo = "Kein Kennwort vorhanden zum Kopieren.";
+            return;
+        }
+
+        var ok = await JS.InvokeAsync<bool>("clipboardHelper.copyText", newPassword);
+        copyInfo = ok
+            ? "Kennwort in die Zwischenablage kopiert."
+            : "Kopieren in die Zwischenablage ist fehlgeschlagen.";
+    }
+}
