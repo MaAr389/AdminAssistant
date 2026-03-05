@@ -4,8 +4,10 @@
 
 @using AdminAssistant.Core.Interfaces
 @using AdminAssistant.Core.Models
+@using Microsoft.AspNetCore.Components.Authorization
 
 @inject IOuAccessService OuAccessService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Berechtigungen</PageTitle>
 
@@ -87,7 +89,10 @@
             return;
         }
 
-        await OuAccessService.AddPermissionAsync(selectedArea, newDistinguishedName);
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var performedBy = authState.User?.Identity?.Name ?? "Unbekannt";
+
+        await OuAccessService.AddPermissionAsync(selectedArea, newDistinguishedName, performedBy);
         newDistinguishedName = string.Empty;
         await LoadPermissionsAsync();
 

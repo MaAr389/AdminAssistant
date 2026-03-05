@@ -1,4 +1,5 @@
-﻿using AdminAssistant.Core.Interfaces;
+﻿using AdminAssistant.Core.Enums;
+using AdminAssistant.Core.Interfaces;
 using AdminAssistant.Core.Models;
 using AdminAssistant.Data.Context;
 using Microsoft.EntityFrameworkCore;
@@ -10,11 +11,13 @@ public class OuAccessService : IOuAccessService
 {
     private readonly IConfiguration _config;
     private readonly AdminAssistantDbContext _dbContext;
+    private readonly IAuditLogService _auditLogService;
 
-    public OuAccessService(IConfiguration config, AdminAssistantDbContext dbContext)
+    public OuAccessService(IConfiguration config, AdminAssistantDbContext dbContext, IAuditLogService auditLogService)
     {
         _config = config;
         _dbContext = dbContext;
+        _auditLogService = auditLogService;
     }
 
     public bool CanAccessUser(string distinguishedName, bool isAdmin)
@@ -32,7 +35,7 @@ public class OuAccessService : IOuAccessService
             .ToListAsync();
     }
 
-    public async Task AddPermissionAsync(string area, string distinguishedName)
+    public async Task AddPermissionAsync(string area, string distinguishedName, string performedBy)
     {
         if (string.IsNullOrWhiteSpace(area) || string.IsNullOrWhiteSpace(distinguishedName))
             return;
@@ -60,6 +63,17 @@ public class OuAccessService : IOuAccessService
         });
 
         await _dbContext.SaveChangesAsync();
+
+        await _auditLogService.LogAsync(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            Action = AuditAction.OuPermissionAdd,
+            PerformedBy = string.IsNullOrWhiteSpace(performedBy) ? "Unbekannt" : performedBy,
+            TargetUser = normalizedDn,
+            ExecutedVia = "AdminAssistant",
+            Success = true,
+            Details = $"Bereich: {area}"
+        });
     }
 
     public async Task<bool> RemovePermissionAsync(int id)
