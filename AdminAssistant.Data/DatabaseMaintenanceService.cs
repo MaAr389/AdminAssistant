@@ -17,7 +17,7 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
 
     public async Task<DatabaseStatistics> GetStatisticsAsync()
     {
-        var dbPath = await GetDatabasePathAsync();
+        var dbPath = GetDatabasePath();
         var info = new FileInfo(dbPath);
 
         var stats = new DatabaseStatistics
@@ -40,7 +40,7 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
 
     public async Task<string> BackupAsync()
     {
-        var dbPath = await GetDatabasePathAsync();
+        var dbPath = GetDatabasePath();
         if (!File.Exists(dbPath))
         {
             throw new FileNotFoundException("Datenbankdatei wurde nicht gefunden.", dbPath);
@@ -66,7 +66,7 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
             throw new InvalidOperationException("Es werden nur .db-Dateien unterstützt.");
         }
 
-        var dbPath = await GetDatabasePathAsync();
+        var dbPath = GetDatabasePath();
         var dbDirectory = Path.GetDirectoryName(dbPath) ?? AppContext.BaseDirectory;
         Directory.CreateDirectory(dbDirectory);
 
@@ -98,66 +98,17 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
         await _db.Database.MigrateAsync();
     }
 
-    private async Task<string> GetDatabasePathAsync()
+    private string GetDatabasePath()
     {
-        await _db.Database.OpenConnectionAsync();
-        try
+        var dataSource = _db.Database.GetDbConnection().DataSource;
+
+        if (string.IsNullOrWhiteSpace(dataSource))
         {
-            var connection = _db.Database.GetDbConnection();
-
-            if (connection is SqliteConnection sqliteConnection)
-            {
-                await using var command = sqliteConnection.CreateCommand();
-                command.CommandText = "PRAGMA database_list;";
-
-                await using var reader = await command.ExecuteReaderAsync();
-                while (await reader.ReadAsync())
-                {
-                    // PRAGMA database_list columns: seq | name | file
-                    var name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
-                    var file = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
-
-                    if (string.Equals(name, "main", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(file))
-                    {
-                        return Path.GetFullPath(file);
-                    }
-                }
-            }
-
-            var dataSource = connection.DataSource;
-            if (string.IsNullOrWhiteSpace(dataSource))
-            {
-                var connectionString = _db.Database.GetConnectionString();
-                if (!string.IsNullOrWhiteSpace(connectionString))
-                {
-                    var builder = new SqliteConnectionStringBuilder(connectionString);
-                    dataSource = builder.DataSource;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(dataSource))
-            {
-                throw new InvalidOperationException("Datenbankpfad konnte nicht ermittelt werden.");
-            }
-
-            if (dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("In-Memory-Datenbank kann nicht gesichert oder zurückgespielt werden.");
-            }
-
-            if (Path.IsPathRooted(dataSource))
-            {
-                return Path.GetFullPath(dataSource);
-            }
-
-            var currentDirectoryPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), dataSource));
-            var appBasePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, dataSource));
-
-            return File.Exists(currentDirectoryPath) ? currentDirectoryPath : appBasePath;
+            throw new InvalidOperationException("Datenbankpfad konnte nicht ermittelt werden.");
         }
-        finally
-        {
-            await _db.Database.CloseConnectionAsync();
-        }
+
+        return Path.IsPathRooted(dataSource)
+            ? dataSource
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, dataSource));
     }
 }
