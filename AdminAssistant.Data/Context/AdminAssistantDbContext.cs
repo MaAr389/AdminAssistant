@@ -17,6 +17,7 @@ public class AdminAssistantDbContext : DbContext
     public DbSet<VpnSmartcardReader> VpnSmartcardReaders { get; set; }
     public DbSet<VpnAccessCard> VpnAccessCards { get; set; }
     public DbSet<VpnInventorySettings> VpnInventorySettings { get; set; }
+    public DbSet<OuPermission> OuPermissions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +44,15 @@ public class AdminAssistantDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.TotalLicenses).IsRequired();
             entity.HasData(new VpnInventorySettings { Id = 1, TotalLicenses = 150 });
+        });
+
+
+        modelBuilder.Entity<OuPermission>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Area).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.DistinguishedName).IsRequired().HasMaxLength(1024);
+            entity.HasIndex(e => new { e.Area, e.DistinguishedName }).IsUnique();
         });
 
         modelBuilder.Entity<VpnAccessCard>(entity =>

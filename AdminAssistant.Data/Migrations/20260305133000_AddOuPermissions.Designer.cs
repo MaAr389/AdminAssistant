@@ -3,6 +3,7 @@ using System;
 using AdminAssistant.Data.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,10 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AdminAssistant.Data.Migrations
 {
     [DbContext(typeof(AdminAssistantDbContext))]
-    partial class AdminAssistantDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260305133000_AddOuPermissions")]
+    partial class AddOuPermissions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.19");
@@ -61,7 +63,6 @@ namespace AdminAssistant.Data.Migrations
 
                     b.ToTable("AuditLogs");
                 });
-
 
             modelBuilder.Entity("AdminAssistant.Core.Models.OuPermission", b =>
                 {
@@ -123,7 +124,6 @@ namespace AdminAssistant.Data.Migrations
 
                     b.ToTable("VpnAccessCards");
                 });
-
 
             modelBuilder.Entity("AdminAssistant.Core.Models.VpnInventorySettings", b =>
                 {

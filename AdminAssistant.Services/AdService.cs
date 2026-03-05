@@ -13,12 +13,14 @@ public class AdService : IAdService
     private readonly IConfiguration _config;
     private readonly IAuditLogService _auditLog;
     private readonly ILogger<AdService> _logger;
+    private readonly IOuAccessService _ouAccessService;
 
-    public AdService(IConfiguration config, IAuditLogService auditLog, ILogger<AdService> logger)
+    public AdService(IConfiguration config, IAuditLogService auditLog, ILogger<AdService> logger, IOuAccessService ouAccessService)
     {
         _config = config;
         _auditLog = auditLog;
         _logger = logger;
+        _ouAccessService = ouAccessService;
     }
 
     // ─── Hilfsmethoden ───────────────────────────────────────────────────────
@@ -379,11 +381,8 @@ public class AdService : IAdService
             if (isAdmin)
                 return results;
 
-            var allowedOUs = _config.GetSection("GroupManagement:AllowedOUs")
-                                    .Get<List<string>>() ?? new();
-
-            return results.Where(g => allowedOUs.Any(ou =>
-                g.DistinguishedName.EndsWith(ou, StringComparison.OrdinalIgnoreCase)))
+            return results
+                .Where(g => _ouAccessService.CanAccessGroup(g.DistinguishedName, false))
                 .ToList();
         });
     }
