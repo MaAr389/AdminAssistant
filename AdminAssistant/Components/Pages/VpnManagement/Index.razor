@@ -446,6 +446,7 @@ else
     {
         var authState = await AuthProvider.GetAuthenticationStateAsync();
         isAdmin = authState.User.IsInRole(@"SP\GRP_Admin_AdminAssistant");
+        //isAdmin = authState.User.IsInRole(@"ASD\GG_ADMIN_SP");
         await LoadInventoryAsync();
     }
 

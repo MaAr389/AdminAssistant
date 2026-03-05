@@ -352,6 +352,40 @@ public class AdService : IAdService
 
     // ─── Gruppen suchen ──────────────────────────────────────────────────────
 
+    public async Task<IEnumerable<AdGroupResult>> GetAllGroupsAsync(bool isAdmin = false)
+    {
+        var (domain, serviceUser, servicePass) = GetAdConfig();
+
+        return await Task.Run(() =>
+        {
+            using var context = new PrincipalContext(ContextType.Domain, domain, serviceUser, servicePass);
+            using var searcher = new PrincipalSearcher(new GroupPrincipal(context));
+
+            var results = searcher.FindAll()
+                .OfType<GroupPrincipal>()
+                .Take(200)
+                .Select(g => new AdGroupResult
+                {
+                    Name = g.Name ?? string.Empty,
+                    DistinguishedName = g.DistinguishedName ?? string.Empty,
+                    Description = g.Description ?? string.Empty
+                })
+                .OrderBy(g => g.Name)
+                .ToList();
+
+            if (isAdmin)
+                return results;
+
+            var allowedOUs = _config.GetSection("GroupManagement:AllowedOUs")
+                                    .Get<List<string>>() ?? new();
+
+            return results.Where(g => allowedOUs.Any(ou =>
+                g.DistinguishedName.EndsWith(ou, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        });
+    }
+
+
     public async Task<IEnumerable<AdGroupResult>> SearchGroupsAsync(string searchTerm, bool isAdmin = false)
     {
         if (string.IsNullOrWhiteSpace(searchTerm) || searchTerm.Length < 2)
@@ -376,6 +410,7 @@ public class AdService : IAdService
                     Description = g.Description ?? string.Empty
                 });
 
+<<<<<<< codex/add-dynamic-permissions-management-tab
             if (!isAdmin)
             {
                 query = query
@@ -384,6 +419,10 @@ public class AdService : IAdService
 
             return query
                 .Take(50)
+=======
+            return results
+                .Where(g => _ouAccessService.CanAccessGroup(g.DistinguishedName, false))
+>>>>>>> master
                 .ToList();
         });
     }

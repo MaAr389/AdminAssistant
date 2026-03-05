@@ -326,8 +326,8 @@ else
             var principal = authState.User;
 
             // Admin-Gruppen hier bei Bedarf anpassen
-            //var isAdminAssistant = principal.IsInRole(@"ASD\GG_ADMIN_SP");
-            var isAdminAssistant = principal.IsInRole(@"SP\GRP_Admin_AdminAssistant");
+            var isAdminAssistant = principal.IsInRole(@"ASD\GG_ADMIN_SP");
+            //var isAdminAssistant = principal.IsInRole(@"SP\GRP_Admin_AdminAssistant");
 
             var isAdmin = isAdminAssistant;
 
