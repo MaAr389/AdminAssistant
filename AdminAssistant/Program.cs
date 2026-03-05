@@ -20,9 +20,7 @@ builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
 //    options.AddPolicy("KeyUserOnly", policy =>
 //        policy.RequireAssertion(ctx =>
 //            ctx.User.IsInRole(@"ASD\GG_ADMIN_ASD") ||
-builder.Services.AddScoped<IDatabaseMaintenanceService, DatabaseMaintenanceService>();
 //            ctx.User.IsInRole(@"ASD\GG_ADMIN_SP"))); // Admins dürfen alles
-
 //    options.AddPolicy("AdminOnly", policy =>
 //        policy.RequireAssertion(ctx =>
 //            ctx.User.IsInRole(@"ASD\GG_ADMIN_SP")));
@@ -50,6 +48,7 @@ builder.Services.AddScoped<IVpnInventoryService, VpnInventoryService>();
 builder.Services.AddScoped<IAdService, AdService>();
 builder.Services.AddScoped<IOuAccessService, OuAccessService>();
 builder.Services.AddScoped<IDhcpService, DhcpService>();
+builder.Services.AddScoped<IDatabaseMaintenanceService, DatabaseMaintenanceService>();
 
 builder.Services.AddHttpContextAccessor();
 

@@ -25,7 +25,7 @@
         <i class="bi bi-search me-2"></i>Gruppe suchen
     </div>
     <div class="card-body">
-        <div class="input-group">
+        <div class="input-group mb-2">
             <input class="form-control" placeholder="Gruppenname..."
                    value="@searchTerm"
                    @oninput="OnSearchInput"
@@ -42,6 +42,9 @@
                 Suchen
             </button>
         </div>
+        <button class="btn btn-outline-primary btn-sm" @onclick="LoadAllGroups" disabled="@isLoading">
+            <i class="bi bi-people-fill me-1"></i>Alle Gruppen anzeigen
+        </button>
         @if (!isAdmin)
         {
             <small class="text-muted mt-1 d-block">
@@ -66,7 +69,17 @@
         {
             <div class="card shadow-sm">
                 <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-people-fill me-2"></i>Ergebnisse</span>
+                    <span>
+                        <i class="bi bi-people-fill me-2"></i>
+                        @if (showingAll)
+                        {
+                            <span>Alle Gruppen</span>
+                        }
+                        else
+                        {
+                            <span>Ergebnisse</span>
+                        }
+                    </span>
                     <span class="badge bg-secondary">@results.Count() Gruppen</span>
                 </div>
                 <div class="table-responsive">
@@ -108,6 +121,7 @@
     private IEnumerable<AdGroupResult>? results;
     private bool isLoading = false;
     private bool isAdmin = false;
+    private bool showingAll = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -119,6 +133,7 @@
     private async Task OnSearchInput(ChangeEventArgs e)
     {
         searchTerm = e.Value?.ToString() ?? string.Empty;
+        showingAll = false;
 
         if (searchTerm.Length >= 2)
         {
@@ -144,8 +159,20 @@
         if (string.IsNullOrWhiteSpace(searchTerm) || searchTerm.Length < 2) return;
 
         isLoading = true;
+        showingAll = false;
         results = null;
         results = await AdService.SearchGroupsAsync(searchTerm, isAdmin);
+        isLoading = false;
+    }
+
+    private async Task LoadAllGroups()
+    {
+        isLoading = true;
+        showingAll = true;
+        searchTerm = string.Empty;
+        results = null;
+
+        results = await AdService.GetAllGroupsAsync(isAdmin);
         isLoading = false;
     }
 

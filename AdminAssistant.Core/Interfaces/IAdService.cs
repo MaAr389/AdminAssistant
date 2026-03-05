@@ -17,6 +17,7 @@ public interface IAdService
 
     // Gruppenverwaltung
     Task<IEnumerable<AdGroupResult>> SearchGroupsAsync(string searchTerm, bool isAdmin = false);
+    Task<IEnumerable<AdGroupResult>> GetAllGroupsAsync(bool isAdmin = false);
     Task<AdGroupDetail?> GetGroupAsync(string groupName);
     Task<bool> AddGroupMemberAsync(string groupName, string samAccountName, string performedBy);
     Task<bool> RemoveGroupMemberAsync(string groupName, string samAccountName, string performedBy);
