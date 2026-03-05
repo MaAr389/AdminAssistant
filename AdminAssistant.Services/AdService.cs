@@ -401,22 +401,28 @@ public class AdService : IAdService
                 Name = $"*{searchTerm}*"
             });
 
-            var results = searcher.FindAll()
+            var query = searcher.FindAll()
                 .OfType<GroupPrincipal>()
-                .Take(50)
                 .Select(g => new AdGroupResult
                 {
                     Name = g.Name ?? string.Empty,
                     DistinguishedName = g.DistinguishedName ?? string.Empty,
                     Description = g.Description ?? string.Empty
-                })
-                .ToList();
+                });
 
-            if (isAdmin)
-                return results;
+<<<<<<< codex/add-dynamic-permissions-management-tab
+            if (!isAdmin)
+            {
+                query = query
+                    .Where(g => _ouAccessService.CanAccessGroup(g.DistinguishedName, false));
+            }
 
+            return query
+                .Take(50)
+=======
             return results
                 .Where(g => _ouAccessService.CanAccessGroup(g.DistinguishedName, false))
+>>>>>>> master
                 .ToList();
         });
     }

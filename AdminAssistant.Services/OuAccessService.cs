@@ -38,8 +38,16 @@ public class OuAccessService : IOuAccessService
             return;
 
         var normalizedDn = distinguishedName.Trim();
-        var exists = await _dbContext.OuPermissions.AnyAsync(p =>
-            p.Area == area && p.DistinguishedName.ToLower() == normalizedDn.ToLower());
+        var normalizedDnForCompare = NormalizeDn(normalizedDn);
+
+        var existingDns = await _dbContext.OuPermissions
+            .AsNoTracking()
+            .Where(p => p.Area == area)
+            .Select(p => p.DistinguishedName)
+            .ToListAsync();
+
+        var exists = existingDns
+            .Any(dn => NormalizeDn(dn) == normalizedDnForCompare);
 
         if (exists)
             return;
@@ -70,23 +78,48 @@ public class OuAccessService : IOuAccessService
         if (isAdmin)
             return true;
 
-        var allowedOUs = _dbContext.OuPermissions
-            .AsNoTracking()
-            .Where(p => p.Area == area)
-            .Select(p => p.DistinguishedName)
-            .ToList();
+        var normalizedDn = NormalizeDn(distinguishedName);
+        if (string.IsNullOrWhiteSpace(normalizedDn))
+            return false;
 
-        if (!allowedOUs.Any())
-        {
-            allowedOUs = _config.GetSection(fallbackConfigPath)
-                .Get<List<string>>() ?? new List<string>();
-        }
+        var allowedOUs = LoadAllowedOus(area, fallbackConfigPath)
+            .Select(NormalizeDn)
+            .Where(ou => !string.IsNullOrWhiteSpace(ou))
+            .Distinct()
+            .ToList();
 
         if (!allowedOUs.Any())
             return false;
 
         return containsMatch
-            ? allowedOUs.Any(ou => distinguishedName.Contains(ou, StringComparison.OrdinalIgnoreCase))
-            : allowedOUs.Any(ou => distinguishedName.EndsWith(ou, StringComparison.OrdinalIgnoreCase));
+            ? allowedOUs.Any(ou => normalizedDn.Contains(ou, StringComparison.OrdinalIgnoreCase))
+            : allowedOUs.Any(ou => normalizedDn.EndsWith(ou, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private List<string> LoadAllowedOus(string area, string fallbackConfigPath)
+    {
+        var dbEntries = _dbContext.OuPermissions
+            .AsNoTracking()
+            .Where(p => p.Area == area)
+            .Select(p => p.DistinguishedName)
+            .ToList();
+
+        if (dbEntries.Any())
+            return dbEntries;
+
+        return _config.GetSection(fallbackConfigPath)
+            .Get<List<string>>()?
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList() ?? new List<string>();
+    }
+
+    private static string NormalizeDn(string? dn)
+    {
+        if (string.IsNullOrWhiteSpace(dn))
+            return string.Empty;
+
+        return string.Join(",",
+            dn.Split(',', StringSplitOptions.RemoveEmptyEntries)
+              .Select(part => part.Trim()));
     }
 }
