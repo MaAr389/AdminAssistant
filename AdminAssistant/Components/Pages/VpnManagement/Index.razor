@@ -1,4 +1,4 @@
-﻿@page "/vpn-management"
+@page "/vpn-management"
 @attribute [Authorize(Policy = "KeyUserOnly")]
 @rendermode InteractiveServer
 
@@ -23,7 +23,7 @@
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-            <button class="btn btn-outline-primary btn-sm" @onclick="LoadAllUsers" disabled="@isLoading">
+            <button class="btn btn-outline-primary btn-sm" @onclick="LoadAllUsersAsync" disabled="@isLoading">
                 <i class="bi bi-people-fill me-1"></i>Alle Benutzer laden
             </button>
             <button class="btn btn-outline-secondary btn-sm" @onclick="ToggleAllSelections" disabled="@(!CanSelectAll)">
@@ -41,7 +41,7 @@
             <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
             <input class="form-control border-start-0"
                    value="@searchTerm"
-                   @oninput="OnSearchChanged"
+                   @oninput="OnSearchChangedAsync"
                    placeholder="User suchen (Name, SAM oder UPN; mind. 2 Zeichen)" />
             @if (!string.IsNullOrWhiteSpace(searchTerm))
             {
@@ -59,7 +59,7 @@
         Lade Benutzer...
     </div>
 }
-else if (results == null)
+else if (results is null)
 {
     <div class="text-center py-5 text-muted">
         <i class="bi bi-search fs-1 d-block mb-3"></i>
@@ -95,7 +95,7 @@ else
                                         <input type="checkbox"
                                                class="form-check-input"
                                                checked="@selectedUsers.Contains(user.SamAccountName)"
-                                               @onchange="(e) => ToggleSelection(user.SamAccountName, ParseCheckboxValue(e.Value))" />
+                                               @onchange="e => ToggleSelection(user.SamAccountName, ParseCheckboxValue(e.Value))" />
                                     </td>
                                     <td>@user.DisplayName</td>
                                     <td><code>@upn</code></td>
@@ -135,8 +135,6 @@ else
                             <thead class="table-light">
                                 <tr>
                                     <th>Anzeigename</th>
-                                    @*                                     <th>UPN</th>
-                                    <th>Status</th> *@
                                     <th>HEX64</th>
                                 </tr>
                             </thead>
@@ -145,8 +143,6 @@ else
                                 {
                                     <tr>
                                         <td>@item.DisplayName</td>
-                                        @*                                         <td><code>@item.Upn</code></td>
-                                        <td>@item.Status</td> *@
                                         <td><code>@item.Encoded</code></td>
                                     </tr>
                                 }
@@ -165,24 +161,12 @@ else
     private string searchTerm = string.Empty;
     private string resultTitle = "Benutzerliste";
     private List<AdUserResult>? results;
-    private readonly HashSet<string> selectedUsers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    private readonly List<EncodedVpnUser> encodedResults = new List<EncodedVpnUser>();
+    private readonly HashSet<string> selectedUsers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<EncodedVpnUser> encodedResults = new();
 
-    private bool CanSelectAll
-    {
-        get { return results != null && results.Count > 0; }
-    }
+    private bool CanSelectAll => results is { Count: > 0 };
 
-    private bool AllSelected
-    {
-        get
-        {
-            if (!CanSelectAll || results == null)
-                return false;
-
-            return results.All(x => selectedUsers.Contains(x.SamAccountName));
-        }
-    }
+    private bool AllSelected => CanSelectAll && results!.All(x => selectedUsers.Contains(x.SamAccountName));
 
     protected override async Task OnInitializedAsync()
     {
@@ -190,7 +174,7 @@ else
         isAdmin = authState.User.IsInRole(@"SP\GRP_Admin_AdminAssistant");
     }
 
-    private async Task LoadAllUsers()
+    private async Task LoadAllUsersAsync()
     {
         isLoading = true;
         encodedResults.Clear();
@@ -207,7 +191,7 @@ else
         isLoading = false;
     }
 
-    private async Task OnSearchChanged(ChangeEventArgs e)
+    private async Task OnSearchChangedAsync(ChangeEventArgs e)
     {
         searchTerm = e.Value?.ToString() ?? string.Empty;
 
@@ -227,7 +211,7 @@ else
             .OrderBy(u => u.DisplayName)
             .ToList();
 
-        resultTitle = "Suchergebnisse für \"" + searchTerm + "\"";
+        resultTitle = $"Suchergebnisse für \"{searchTerm}\"";
         selectedUsers.Clear();
         isLoading = false;
     }
@@ -249,7 +233,7 @@ else
 
     private void ToggleAllSelections()
     {
-        if (!CanSelectAll || results == null)
+        if (!CanSelectAll || results is null)
             return;
 
         if (AllSelected)
@@ -265,7 +249,7 @@ else
 
     private void GenerateHex64Strings()
     {
-        if (!CanSelectAll || results == null)
+        if (!CanSelectAll || results is null)
             return;
 
         encodedResults.Clear();
@@ -274,7 +258,7 @@ else
             .Where(u => selectedUsers.Contains(u.SamAccountName))
             .Select(u => new
             {
-                DisplayName = u.DisplayName,
+                u.DisplayName,
                 Upn = GetUpn(u),
                 Status = u.IsEnabled ? "Enable" : "Disable"
             })
@@ -301,11 +285,11 @@ else
         builder.AppendLine("DisplayName,UPN,Status,HEX64");
 
         foreach (var item in encodedResults)
-            builder.AppendLine(Csv(item.DisplayName) + "," + Csv(item.Upn) + "," + Csv(item.Status) + "," + Csv(item.Encoded));
+            builder.AppendLine($"{Csv(item.DisplayName)},{Csv(item.Upn)},{Csv(item.Status)},{Csv(item.Encoded)}");
 
         var bytes = Encoding.UTF8.GetBytes(builder.ToString());
         var base64 = Convert.ToBase64String(bytes);
-        var filename = "vpn-hex64-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".csv";
+        var filename = $"vpn-hex64-{DateTime.Now:yyyyMMdd-HHmmss}.csv";
 
         await JS.InvokeVoidAsync("downloadBase64File", filename, "text/csv;charset=utf-8", base64);
     }
@@ -321,13 +305,11 @@ else
     private static string Csv(string value)
     {
         var safe = (value ?? string.Empty).Replace("\"", "\"\"");
-        return "\"" + safe + "\"";
+        return $"\"{safe}\"";
     }
 
-    private static string GetUpn(AdUserResult user)
-    {
-        return string.IsNullOrWhiteSpace(user.UserPrincipalName) ? user.Email : user.UserPrincipalName;
-    }
+    private static string GetUpn(AdUserResult user) =>
+        string.IsNullOrWhiteSpace(user.UserPrincipalName) ? user.Email : user.UserPrincipalName;
 
     private static string EncodeHex64(string value)
     {
@@ -336,19 +318,11 @@ else
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(hex));
     }
 
-    private sealed class EncodedVpnUser
+    private sealed class EncodedVpnUser(string displayName, string upn, string status, string encoded)
     {
-        public string DisplayName { get; }
-        public string Upn { get; }
-        public string Status { get; }
-        public string Encoded { get; }
-
-        public EncodedVpnUser(string displayName, string upn, string status, string encoded)
-        {
-            DisplayName = displayName;
-            Upn = upn;
-            Status = status;
-            Encoded = encoded;
-        }
+        public string DisplayName { get; } = displayName;
+        public string Upn { get; } = upn;
+        public string Status { get; } = status;
+        public string Encoded { get; } = encoded;
     }
 }
