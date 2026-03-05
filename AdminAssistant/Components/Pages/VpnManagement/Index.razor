@@ -420,21 +420,6 @@ else
 
     private List<AdUserResult> adUserSuggestions = new();
 
-    private const int PageSize = 10;
-    private int readerPage = 1;
-    private int cardPage = 1;
-
-    private int ReaderTotalPages => Math.Max(1, (int)Math.Ceiling(readerRows.Count / (double)PageSize));
-    private int CardTotalPages => Math.Max(1, (int)Math.Ceiling(cardRows.Count / (double)PageSize));
-
-    private IEnumerable<VpnSmartcardReader> PagedReaderRows => readerRows
-        .Skip((readerPage - 1) * PageSize)
-        .Take(PageSize);
-
-    private IEnumerable<VpnAccessCard> PagedCardRows => cardRows
-        .Skip((cardPage - 1) * PageSize)
-        .Take(PageSize);
-
     private readonly HashSet<string> selectedUsers = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<EncodedVpnUser> encodedResults = new();
 
@@ -472,6 +457,15 @@ else
     {
         readerPage = Math.Clamp(readerPage, 1, ReaderTotalPages);
         cardPage = Math.Clamp(cardPage, 1, CardTotalPages);
+    }
+
+    private async Task SaveTotalLicensesAsync()
+    {
+        await RunInventoryActionAsync(async () =>
+        {
+            editableTotalLicenses = await VpnInventoryService.UpdateTotalLicensesAsync(editableTotalLicenses);
+            await WriteVpnAuditAsync("Lizenzanzahl aktualisiert", $"Neue Anzahl: {editableTotalLicenses}");
+        }, "Lizenzanzahl gespeichert.");
     }
 
     private async Task SaveTotalLicensesAsync()
@@ -562,7 +556,7 @@ else
         {
             await VpnInventoryService.UpdateCardAsync(row);
             await WriteVpnAuditAsync("Chipkarte aktualisiert", DescribeCard(row));
-        }, "Chipkarte gespeichert.");
+        }, "Karte gespeichert.");
     }
 
     private async Task DeleteCardAsync(int id)
@@ -572,7 +566,7 @@ else
         {
             await VpnInventoryService.DeleteCardAsync(id);
             await WriteVpnAuditAsync("Chipkarte gelöscht", card is null ? $"ID: {id}" : DescribeCard(card));
-        }, "Chipkarte gelöscht.");
+        }, "Karte gelöscht.");
     }
 
     private async Task OnNewReaderAssignedUserInputAsync(ChangeEventArgs e)
