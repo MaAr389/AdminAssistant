@@ -37,9 +37,9 @@ public class DhcpService : IDhcpService
         return ps;
     }
 
-    private void AddRemoteServerParameter(PSCommand command)
+    private void AddRemoteServerParameter(PowerShell ps)
     {
-        command.AddParameter("ComputerName", GetDhcpServer());
+        ps.AddParameter("ComputerName", GetDhcpServer());
     }
 
     private static string FormatMac(string raw)
@@ -56,7 +56,7 @@ public class DhcpService : IDhcpService
         {
             using var ps = CreatePs();
             ps.AddCommand("Get-DhcpServerv4Scope");
-            AddRemoteServerParameter(ps.Commands.Commands.Last());
+            AddRemoteServerParameter(ps);
 
             var results = ps.Invoke();
 
@@ -94,7 +94,7 @@ public class DhcpService : IDhcpService
             using var ps = CreatePs();
             ps.AddCommand("Get-DhcpServerv4Lease")
               .AddParameter("ScopeId", scopeId);
-            AddRemoteServerParameter(ps.Commands.Commands.Last());
+            AddRemoteServerParameter(ps);
 
             var results = ps.Invoke();
 
@@ -130,7 +130,7 @@ public class DhcpService : IDhcpService
               .AddParameter("ScopeId", scopeId)
               .AddParameter("IPAddress", ipAddress)
               .AddParameter("Confirm", false);
-            AddRemoteServerParameter(ps.Commands.Commands.Last());
+            AddRemoteServerParameter(ps);
 
             ps.Invoke();
 
@@ -154,7 +154,7 @@ public class DhcpService : IDhcpService
             using var ps = CreatePs();
             ps.AddCommand("Get-DhcpServerv4Reservation")
               .AddParameter("ScopeId", scopeId);
-            AddRemoteServerParameter(ps.Commands.Commands.Last());
+            AddRemoteServerParameter(ps);
 
             var results = ps.Invoke();
 
@@ -191,7 +191,7 @@ public class DhcpService : IDhcpService
               .AddParameter("ClientId", reservation.MacAddress)
               .AddParameter("Name", reservation.Name)
               .AddParameter("Description", reservation.Description ?? string.Empty);
-            AddRemoteServerParameter(ps.Commands.Commands.Last());
+            AddRemoteServerParameter(ps);
 
             ps.Invoke();
 
@@ -217,7 +217,7 @@ public class DhcpService : IDhcpService
               .AddParameter("ScopeId", scopeId)
               .AddParameter("IPAddress", ipAddress)
               .AddParameter("Confirm", false);
-            AddRemoteServerParameter(ps.Commands.Commands.Last());
+            AddRemoteServerParameter(ps);
 
             ps.Invoke();
 
