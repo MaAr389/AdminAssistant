@@ -20,7 +20,8 @@ builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
 //    options.AddPolicy("KeyUserOnly", policy =>
 //        policy.RequireAssertion(ctx =>
 //            ctx.User.IsInRole(@"ASD\GG_ADMIN_ASD") ||
-//            ctx.User.IsInRole(@"ASD\GG_ADMIN_SP"))); // Admins dürfen alles
+builder.Services.AddScoped<IDatabaseMaintenanceService, DatabaseMaintenanceService>();
+//            ctx.User.IsInRole(@"ASD\GG_ADMIN_SP"))); // Admins dÃ¼rfen alles
 
 //    options.AddPolicy("AdminOnly", policy =>
 //        policy.RequireAssertion(ctx =>
@@ -32,7 +33,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("KeyUserOnly", policy =>
         policy.RequireAssertion(ctx =>
             ctx.User.IsInRole(@"SP\GRP_KeyUser_AdminAssistant") ||
-            ctx.User.IsInRole(@"SP\GRP_Admin_AdminAssistant"))); // Admins dürfen alles
+            ctx.User.IsInRole(@"SP\GRP_Admin_AdminAssistant"))); // Admins dÃ¼rfen alles
 
     options.AddPolicy("AdminOnly", policy =>
         policy.RequireAssertion(ctx =>
