@@ -108,7 +108,7 @@
                 <div class="row g-2 align-items-end">
                     <div class="col-12 col-md-4">
                         <label class="form-label small">Seriennummer</label>
-                        <input class="form-control form-control-sm" @bind="newReaderSerial" />
+                        <input class="form-control form-control-sm" @bind="newReaderSerial" @bind:event="oninput" />
                     </div>
                     <div class="col-12 col-md-4">
                         <label class="form-label small">AD Benutzer</label>
@@ -182,7 +182,7 @@
                 <div class="row g-2 align-items-end">
                     <div class="col-12 col-md-3">
                         <label class="form-label small">Kartennummer</label>
-                        <input class="form-control form-control-sm" @bind="newCardNumber" />
+                        <input class="form-control form-control-sm" @bind="newCardNumber" @bind:event="oninput" />
                     </div>
                     <div class="col-12 col-md-3">
                         <label class="form-label small">AD Benutzer</label>
@@ -479,6 +479,8 @@ else
 
     private async Task AddReaderAsync()
     {
+        newReaderSerial = newReaderSerial.Trim();
+
         if (string.IsNullOrWhiteSpace(newReaderSerial))
             return;
 
@@ -522,6 +524,8 @@ else
 
     private async Task AddCardAsync()
     {
+        newCardNumber = newCardNumber.Trim();
+
         if (string.IsNullOrWhiteSpace(newCardNumber))
             return;
 
