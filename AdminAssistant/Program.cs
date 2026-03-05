@@ -19,12 +19,12 @@ builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme)
 //{
 //    options.AddPolicy("KeyUserOnly", policy =>
 //        policy.RequireAssertion(ctx =>
-//            ctx.User.IsInRole(@"ASD\GG_ADMIN_ADMIN_ASSISTANT_ASD") ||
-//            ctx.User.IsInRole(@"ASD\GG_ADMIN_ADMIN_ASSISTANT_SP"))); // Admins dürfen alles
+//            ctx.User.IsInRole(@"ASD\GG_ADMIN_ASD") ||
+//            ctx.User.IsInRole(@"ASD\GG_ADMIN_SP"))); // Admins dürfen alles
 
 //    options.AddPolicy("AdminOnly", policy =>
 //        policy.RequireAssertion(ctx =>
-//            ctx.User.IsInRole(@"ASD\GG_ADMIN_ADMIN_ASSISTANT_SP")));
+//            ctx.User.IsInRole(@"ASD\GG_ADMIN_SP")));
 //});
 
 builder.Services.AddAuthorization(options =>
@@ -45,6 +45,7 @@ builder.Services.AddDbContext<AdminAssistantDbContext>(options =>
 
 // Eigene Services
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+builder.Services.AddScoped<IVpnInventoryService, VpnInventoryService>();
 builder.Services.AddScoped<IAdService, AdService>();
 builder.Services.AddScoped<IOuAccessService, OuAccessService>();
 builder.Services.AddScoped<IDhcpService, DhcpService>();

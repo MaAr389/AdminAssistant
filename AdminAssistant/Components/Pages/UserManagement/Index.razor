@@ -150,7 +150,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthProvider.GetAuthenticationStateAsync();
-        //isAdmin = authState.User.IsInRole(@"ASD\GG_ADMIN_ADMIN_ASSISTANT_SP");
+        //isAdmin = authState.User.IsInRole(@"ASD\GG_ADMIN_SP");
         isAdmin = authState.User.IsInRole(@"SP\GRP_Admin_AdminAssistant");
     }
 

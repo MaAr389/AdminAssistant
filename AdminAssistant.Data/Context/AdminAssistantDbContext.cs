@@ -14,6 +14,8 @@ public class AdminAssistantDbContext : DbContext
         : base(options) { }
 
     public DbSet<AuditLogEntry> AuditLogs { get; set; }
+    public DbSet<VpnSmartcardReader> VpnSmartcardReaders { get; set; }
+    public DbSet<VpnAccessCard> VpnAccessCards { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +26,24 @@ public class AdminAssistantDbContext : DbContext
             entity.Property(e => e.TargetUser).IsRequired().HasMaxLength(256);
             entity.Property(e => e.ExecutedVia).IsRequired().HasMaxLength(256);
             entity.Property(e => e.Action).HasConversion<string>(); // Enum als Text in DB
+        });
+        modelBuilder.Entity<VpnSmartcardReader>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.SerialNumber).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.AssignedAdUser).HasMaxLength(256);
+            entity.Property(e => e.Description).HasMaxLength(512);
+            entity.HasIndex(e => e.SerialNumber).IsUnique();
+        });
+
+        modelBuilder.Entity<VpnAccessCard>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CardNumber).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.AssignedAdUser).HasMaxLength(256);
+            entity.Property(e => e.Pin).HasMaxLength(100);
+            entity.Property(e => e.Notes).HasMaxLength(512);
+            entity.HasIndex(e => e.CardNumber).IsUnique();
         });
     }
 }
