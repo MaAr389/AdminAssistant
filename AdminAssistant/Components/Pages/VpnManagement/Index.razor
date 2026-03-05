@@ -420,21 +420,6 @@ else
 
     private List<AdUserResult> adUserSuggestions = new();
 
-    private const int PageSize = 10;
-    private int readerPage = 1;
-    private int cardPage = 1;
-
-    private int ReaderTotalPages => CalculateTotalPages(readerRows.Count);
-    private int CardTotalPages => CalculateTotalPages(cardRows.Count);
-
-    private IEnumerable<VpnSmartcardReader> PagedReaderRows => readerRows
-        .Skip((readerPage - 1) * PageSize)
-        .Take(PageSize);
-
-    private IEnumerable<VpnAccessCard> PagedCardRows => cardRows
-        .Skip((cardPage - 1) * PageSize)
-        .Take(PageSize);
-
     private readonly HashSet<string> selectedUsers = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<EncodedVpnUser> encodedResults = new();
 
@@ -460,32 +445,27 @@ else
 
     private void ChangeReaderPage(int delta)
     {
-        readerPage = ClampPage(readerPage + delta, ReaderTotalPages);
+        readerPage = Math.Clamp(readerPage + delta, 1, ReaderTotalPages);
     }
 
     private void ChangeCardPage(int delta)
     {
-        cardPage = ClampPage(cardPage + delta, CardTotalPages);
+        cardPage = Math.Clamp(cardPage + delta, 1, CardTotalPages);
     }
 
     private void EnsureValidPages()
     {
-        readerPage = ClampPage(readerPage, ReaderTotalPages);
-        cardPage = ClampPage(cardPage, CardTotalPages);
+        readerPage = Math.Clamp(readerPage, 1, ReaderTotalPages);
+        cardPage = Math.Clamp(cardPage, 1, CardTotalPages);
     }
 
-    private static int CalculateTotalPages(int itemCount)
+    private async Task SaveTotalLicensesAsync()
     {
-        if (itemCount <= 0)
-            return 1;
-
-        return (int)Math.Ceiling(itemCount / (double)PageSize);
-    }
-
-    private static int ClampPage(int page, int totalPages)
-    {
-        var safeTotalPages = Math.Max(1, totalPages);
-        return Math.Clamp(page, 1, safeTotalPages);
+        await RunInventoryActionAsync(async () =>
+        {
+            editableTotalLicenses = await VpnInventoryService.UpdateTotalLicensesAsync(editableTotalLicenses);
+            await WriteVpnAuditAsync("Lizenzanzahl aktualisiert", $"Neue Anzahl: {editableTotalLicenses}");
+        }, "Lizenzanzahl gespeichert.");
     }
 
     private async Task SaveTotalLicensesAsync()
@@ -576,7 +556,7 @@ else
         {
             await VpnInventoryService.UpdateCardAsync(row);
             await WriteVpnAuditAsync("Chipkarte aktualisiert", DescribeCard(row));
-        }, "Chipkarte gespeichert.");
+        }, "Karte gespeichert.");
     }
 
     private async Task DeleteCardAsync(int id)
@@ -586,7 +566,7 @@ else
         {
             await VpnInventoryService.DeleteCardAsync(id);
             await WriteVpnAuditAsync("Chipkarte gelöscht", card is null ? $"ID: {id}" : DescribeCard(card));
-        }, "Chipkarte gelöscht.");
+        }, "Karte gelöscht.");
     }
 
     private async Task OnNewReaderAssignedUserInputAsync(ChangeEventArgs e)
