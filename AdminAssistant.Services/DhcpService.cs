@@ -1,6 +1,4 @@
 ﻿using System.Management.Automation;
-using System.Management.Automation.Runspaces;
-using System.Security;
 using AdminAssistant.Core.Interfaces;
 using AdminAssistant.Core.Models;
 using Microsoft.Extensions.Configuration;
@@ -19,49 +17,29 @@ public class DhcpService : IDhcpService
         _logger = logger;
     }
 
-    // ─── Konfiguration ───────────────────────────────────────────────────────
-
     private string GetDhcpServer() =>
         _config["Dhcp:Server"] ?? "lpbkadsrv002.ad.lpbk-mv.de";
 
-    private PSCredential GetDhcpCredential()
+    private PowerShell CreatePs()
     {
-        var domain = _config["Dhcp:Domain"] ?? string.Empty;
-        var user = _config["Dhcp:Username"] ?? string.Empty;
-        var password = _config["Dhcp:Password"] ?? string.Empty;
-
-        var secure = new SecureString();
-        foreach (var c in password) secure.AppendChar(c);
-
-        var userId = string.IsNullOrWhiteSpace(domain) ? user : $@"{domain}\{user}";
-        return new PSCredential(userId, secure);
-    }
-
-    private PowerShell CreateRemotePs()
-    {
-        var server = GetDhcpServer();
-        var cred = GetDhcpCredential();
-
-        var connectionInfo = new WSManConnectionInfo(
-            new Uri($"http://{server}:5985/wsman"),
-            "http://schemas.microsoft.com/powershell/Microsoft.PowerShell",
-            cred)
-        {
-            AuthenticationMechanism = AuthenticationMechanism.Negotiate
-        };
-
-        var runspace = RunspaceFactory.CreateRunspace(connectionInfo);
-        runspace.Open();
-
         var ps = PowerShell.Create();
-        ps.Runspace = runspace;
 
-        // DhcpServer-Modul laden
         ps.AddCommand("Import-Module").AddArgument("DhcpServer");
         ps.Invoke();
-        ps.Commands.Clear();
 
+        if (ps.HadErrors)
+        {
+            _logger.LogError("DhcpServer-Modul konnte nicht geladen werden: {Errors}",
+                string.Join(" | ", ps.Streams.Error.Select(e => e.ToString())));
+        }
+
+        ps.Commands.Clear();
         return ps;
+    }
+
+    private void AddRemoteServerParameter(PSCommand command)
+    {
+        command.AddParameter("ComputerName", GetDhcpServer());
     }
 
     private static string FormatMac(string raw)
@@ -72,14 +50,13 @@ public class DhcpService : IDhcpService
         return string.Join("-", Enumerable.Range(0, 6).Select(i => clean.Substring(i * 2, 2)));
     }
 
-    // ─── Scopes ──────────────────────────────────────────────────────────────
-
     public async Task<IEnumerable<DhcpScope>> GetScopesAsync()
     {
         return await Task.Run(() =>
         {
-            using var ps = CreateRemotePs();
+            using var ps = CreatePs();
             ps.AddCommand("Get-DhcpServerv4Scope");
+            AddRemoteServerParameter(ps.Commands.Commands.Last());
 
             var results = ps.Invoke();
 
@@ -101,7 +78,6 @@ public class DhcpService : IDhcpService
                     SubnetMask = d.SubnetMask.ToString(),
                     StartRange = d.StartRange.ToString(),
                     EndRange = d.EndRange.ToString(),
-                    // Für genaue Used/Free bräuchte man zusätzliche Calls – erstmal 0
                     TotalAddresses = 0,
                     UsedAddresses = 0,
                     FreeAddresses = 0,
@@ -111,15 +87,14 @@ public class DhcpService : IDhcpService
         });
     }
 
-    // ─── Leases ──────────────────────────────────────────────────────────────
-
     public async Task<IEnumerable<DhcpLease>> GetLeasesAsync(string scopeId)
     {
         return await Task.Run(() =>
         {
-            using var ps = CreateRemotePs();
+            using var ps = CreatePs();
             ps.AddCommand("Get-DhcpServerv4Lease")
               .AddParameter("ScopeId", scopeId);
+            AddRemoteServerParameter(ps.Commands.Commands.Last());
 
             var results = ps.Invoke();
 
@@ -146,15 +121,40 @@ public class DhcpService : IDhcpService
         });
     }
 
-    // ─── Reservierungen ─────────────────────────────────────────────────────
+    public async Task<bool> RemoveLeaseAsync(string scopeId, string ipAddress, string performedBy)
+    {
+        return await Task.Run(() =>
+        {
+            using var ps = CreatePs();
+            ps.AddCommand("Remove-DhcpServerv4Lease")
+              .AddParameter("ScopeId", scopeId)
+              .AddParameter("IPAddress", ipAddress)
+              .AddParameter("Confirm", false);
+            AddRemoteServerParameter(ps.Commands.Commands.Last());
+
+            ps.Invoke();
+
+            if (ps.HadErrors)
+            {
+                _logger.LogError(
+                    "Remove-DhcpServerv4Lease Fehler (Scope {Scope}, IP {Ip}): {Errors}",
+                    scopeId, ipAddress,
+                    string.Join(" | ", ps.Streams.Error.Select(e => e.ToString())));
+                return false;
+            }
+
+            return true;
+        });
+    }
 
     public async Task<IEnumerable<DhcpReservation>> GetReservationsAsync(string scopeId)
     {
         return await Task.Run(() =>
         {
-            using var ps = CreateRemotePs();
+            using var ps = CreatePs();
             ps.AddCommand("Get-DhcpServerv4Reservation")
               .AddParameter("ScopeId", scopeId);
+            AddRemoteServerParameter(ps.Commands.Commands.Last());
 
             var results = ps.Invoke();
 
@@ -184,13 +184,14 @@ public class DhcpService : IDhcpService
     {
         return await Task.Run(() =>
         {
-            using var ps = CreateRemotePs();
+            using var ps = CreatePs();
             ps.AddCommand("Add-DhcpServerv4Reservation")
               .AddParameter("ScopeId", reservation.ScopeId)
               .AddParameter("IPAddress", reservation.IpAddress)
               .AddParameter("ClientId", reservation.MacAddress)
               .AddParameter("Name", reservation.Name)
               .AddParameter("Description", reservation.Description ?? string.Empty);
+            AddRemoteServerParameter(ps.Commands.Commands.Last());
 
             ps.Invoke();
 
@@ -211,11 +212,12 @@ public class DhcpService : IDhcpService
     {
         return await Task.Run(() =>
         {
-            using var ps = CreateRemotePs();
+            using var ps = CreatePs();
             ps.AddCommand("Remove-DhcpServerv4Reservation")
               .AddParameter("ScopeId", scopeId)
               .AddParameter("IPAddress", ipAddress)
               .AddParameter("Confirm", false);
+            AddRemoteServerParameter(ps.Commands.Commands.Last());
 
             ps.Invoke();
 
