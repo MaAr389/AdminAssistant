@@ -16,6 +16,7 @@ public class AdminAssistantDbContext : DbContext
     public DbSet<AuditLogEntry> AuditLogs { get; set; }
     public DbSet<VpnSmartcardReader> VpnSmartcardReaders { get; set; }
     public DbSet<VpnAccessCard> VpnAccessCards { get; set; }
+    public DbSet<VpnInventorySettings> VpnInventorySettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,6 +35,14 @@ public class AdminAssistantDbContext : DbContext
             entity.Property(e => e.AssignedAdUser).HasMaxLength(256);
             entity.Property(e => e.Description).HasMaxLength(512);
             entity.HasIndex(e => e.SerialNumber).IsUnique();
+        });
+
+
+        modelBuilder.Entity<VpnInventorySettings>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TotalLicenses).IsRequired();
+            entity.HasData(new VpnInventorySettings { Id = 1, TotalLicenses = 150 });
         });
 
         modelBuilder.Entity<VpnAccessCard>(entity =>
