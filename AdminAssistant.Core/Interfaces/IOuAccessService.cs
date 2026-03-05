@@ -6,5 +6,5 @@ public interface IOuAccessService
     bool CanAccessGroup(string distinguishedName, bool isAdmin);
     Task<IReadOnlyList<Models.OuPermission>> GetPermissionsAsync();
     Task AddPermissionAsync(string area, string distinguishedName, string performedBy);
-    Task<bool> RemovePermissionAsync(int id);
+    Task<bool> RemovePermissionAsync(int id, string performedBy);
 }

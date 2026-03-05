@@ -76,7 +76,7 @@ public class OuAccessService : IOuAccessService
         });
     }
 
-    public async Task<bool> RemovePermissionAsync(int id)
+    public async Task<bool> RemovePermissionAsync(int id, string performedBy)
     {
         var entity = await _dbContext.OuPermissions.FirstOrDefaultAsync(p => p.Id == id);
         if (entity is null)
@@ -84,6 +84,18 @@ public class OuAccessService : IOuAccessService
 
         _dbContext.OuPermissions.Remove(entity);
         await _dbContext.SaveChangesAsync();
+
+        await _auditLogService.LogAsync(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            Action = AuditAction.OuPermissionRemove,
+            PerformedBy = string.IsNullOrWhiteSpace(performedBy) ? "Unbekannt" : performedBy,
+            TargetUser = entity.DistinguishedName,
+            ExecutedVia = "AdminAssistant",
+            Success = true,
+            Details = $"Bereich: {entity.Area}"
+        });
+
         return true;
     }
 
