@@ -4,12 +4,14 @@
 
 @using System.Text
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
 @using AdminAssistant.Core.Interfaces
 @using AdminAssistant.Core.Models
 
 @inject IAdService AdService
 @inject IOuAccessService OuAccessService
+@inject IVpnInventoryService VpnInventoryService
 @inject AuthenticationStateProvider AuthProvider
 @inject IJSRuntime JS
 
@@ -18,6 +20,199 @@
 <div class="d-flex align-items-center mb-4">
     <span class="bi bi-shield-lock-fill me-2 fs-4 text-primary"></span>
     <h3 class="mb-0">VPN</h3>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 bg-primary-subtle h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small">Lizenzen gesamt</div>
+                <div class="fs-4 fw-semibold">@inventory.TotalLicenses</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 bg-success-subtle h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small">Lizenzen frei</div>
+                <div class="fs-4 fw-semibold">@inventory.AvailableLicenses</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 bg-secondary-subtle h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small">Reader gesamt</div>
+                <div class="fs-4 fw-semibold">@inventory.TotalReaders</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 bg-warning-subtle h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small">Reader vergeben</div>
+                <div class="fs-4 fw-semibold">@inventory.AssignedReaders</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 bg-secondary-subtle h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small">Karten gesamt</div>
+                <div class="fs-4 fw-semibold">@inventory.TotalCards</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 bg-warning-subtle h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small">Karten vergeben</div>
+                <div class="fs-4 fw-semibold">@inventory.AssignedCards</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(inventoryMessage))
+{
+    <div class="alert alert-info py-2">@inventoryMessage</div>
+}
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-usb-symbol me-2"></i>Smartcardreader</span>
+                <span class="badge bg-primary">@readerRows.Count</span>
+            </div>
+            <div class="card-body border-bottom">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small">Seriennummer</label>
+                        <input class="form-control form-control-sm" @bind="newReaderSerial" />
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small">AD Benutzer</label>
+                        <input class="form-control form-control-sm" @bind="newReaderAssignedUser" placeholder="DOM\\user oder UPN" />
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small">Beschreibung</label>
+                        <input class="form-control form-control-sm" @bind="newReaderDescription" />
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-sm btn-primary" @onclick="AddReaderAsync" disabled="@inventoryBusy">
+                            <i class="bi bi-plus-circle me-1"></i>Reader hinzufügen
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Seriennummer</th>
+                            <th>AD Benutzer</th>
+                            <th>Beschreibung</th>
+                            <th>Zugewiesen</th>
+                            <th style="width:130px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (readerRows.Count == 0)
+                        {
+                            <tr><td colspan="5" class="text-muted text-center py-3">Keine Reader vorhanden.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in readerRows)
+                            {
+                                <tr>
+                                    <td><input class="form-control form-control-sm" @bind="row.SerialNumber" /></td>
+                                    <td><input class="form-control form-control-sm" @bind="row.AssignedAdUser" /></td>
+                                    <td><input class="form-control form-control-sm" @bind="row.Description" /></td>
+                                    <td>@FormatDate(row.AssignedAt)</td>
+                                    <td class="text-nowrap">
+                                        <button class="btn btn-sm btn-outline-success me-1" @onclick="() => SaveReaderAsync(row)" disabled="@inventoryBusy"><i class="bi bi-save"></i></button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteReaderAsync(row.Id)" disabled="@inventoryBusy"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-credit-card me-2"></i>Karten</span>
+                <span class="badge bg-primary">@cardRows.Count</span>
+            </div>
+            <div class="card-body border-bottom">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-md-3">
+                        <label class="form-label small">Kartennummer</label>
+                        <input class="form-control form-control-sm" @bind="newCardNumber" />
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <label class="form-label small">AD Benutzer</label>
+                        <input class="form-control form-control-sm" @bind="newCardAssignedUser" />
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label small">PIN</label>
+                        <input class="form-control form-control-sm" @bind="newCardPin" />
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small">Notiz</label>
+                        <input class="form-control form-control-sm" @bind="newCardNotes" />
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-sm btn-primary" @onclick="AddCardAsync" disabled="@inventoryBusy">
+                            <i class="bi bi-plus-circle me-1"></i>Karte hinzufügen
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Karte</th>
+                            <th>AD Benutzer</th>
+                            <th>PIN</th>
+                            <th>Notiz</th>
+                            <th>Ausgegeben</th>
+                            <th style="width:130px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (cardRows.Count == 0)
+                        {
+                            <tr><td colspan="6" class="text-muted text-center py-3">Keine Karten vorhanden.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var row in cardRows)
+                            {
+                                <tr>
+                                    <td><input class="form-control form-control-sm" @bind="row.CardNumber" /></td>
+                                    <td><input class="form-control form-control-sm" @bind="row.AssignedAdUser" /></td>
+                                    <td><input class="form-control form-control-sm" @bind="row.Pin" /></td>
+                                    <td><input class="form-control form-control-sm" @bind="row.Notes" /></td>
+                                    <td>@FormatDate(row.IssuedAt)</td>
+                                    <td class="text-nowrap">
+                                        <button class="btn btn-sm btn-outline-success me-1" @onclick="() => SaveCardAsync(row)" disabled="@inventoryBusy"><i class="bi bi-save"></i></button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteCardAsync(row.Id)" disabled="@inventoryBusy"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="card shadow-sm mb-4">
@@ -158,9 +353,24 @@ else
 @code {
     private bool isLoading;
     private bool isAdmin;
+    private bool inventoryBusy;
     private string searchTerm = string.Empty;
     private string resultTitle = "Benutzerliste";
+    private string inventoryMessage = string.Empty;
     private List<AdUserResult>? results;
+    private VpnInventoryOverview inventory = new();
+    private List<VpnSmartcardReader> readerRows = new();
+    private List<VpnAccessCard> cardRows = new();
+
+    private string newReaderSerial = string.Empty;
+    private string newReaderAssignedUser = string.Empty;
+    private string newReaderDescription = string.Empty;
+
+    private string newCardNumber = string.Empty;
+    private string newCardAssignedUser = string.Empty;
+    private string newCardPin = string.Empty;
+    private string newCardNotes = string.Empty;
+
     private readonly HashSet<string> selectedUsers = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<EncodedVpnUser> encodedResults = new();
 
@@ -172,6 +382,103 @@ else
     {
         var authState = await AuthProvider.GetAuthenticationStateAsync();
         isAdmin = authState.User.IsInRole(@"SP\GRP_Admin_AdminAssistant");
+        await LoadInventoryAsync();
+    }
+
+    private async Task LoadInventoryAsync()
+    {
+        inventory = await VpnInventoryService.GetOverviewAsync();
+        readerRows = await VpnInventoryService.GetReadersAsync();
+        cardRows = await VpnInventoryService.GetCardsAsync();
+    }
+
+    private async Task AddReaderAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newReaderSerial))
+            return;
+
+        var entity = new VpnSmartcardReader
+        {
+            SerialNumber = newReaderSerial,
+            AssignedAdUser = newReaderAssignedUser,
+            Description = newReaderDescription,
+            AssignedAt = string.IsNullOrWhiteSpace(newReaderAssignedUser) ? null : DateTime.Now
+        };
+
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.AddReaderAsync(entity);
+            newReaderSerial = string.Empty;
+            newReaderAssignedUser = string.Empty;
+            newReaderDescription = string.Empty;
+        }, "Reader angelegt.");
+    }
+
+    private async Task SaveReaderAsync(VpnSmartcardReader row)
+    {
+        row.AssignedAt = string.IsNullOrWhiteSpace(row.AssignedAdUser) ? null : row.AssignedAt ?? DateTime.Now;
+        await RunInventoryActionAsync(async () => await VpnInventoryService.UpdateReaderAsync(row), "Reader gespeichert.");
+    }
+
+    private async Task DeleteReaderAsync(int id)
+    {
+        await RunInventoryActionAsync(() => VpnInventoryService.DeleteReaderAsync(id), "Reader gelöscht.");
+    }
+
+    private async Task AddCardAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newCardNumber))
+            return;
+
+        var entity = new VpnAccessCard
+        {
+            CardNumber = newCardNumber,
+            AssignedAdUser = newCardAssignedUser,
+            Pin = newCardPin,
+            Notes = newCardNotes,
+            IssuedAt = string.IsNullOrWhiteSpace(newCardAssignedUser) ? null : DateTime.Now
+        };
+
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.AddCardAsync(entity);
+            newCardNumber = string.Empty;
+            newCardAssignedUser = string.Empty;
+            newCardPin = string.Empty;
+            newCardNotes = string.Empty;
+        }, "Karte angelegt.");
+    }
+
+    private async Task SaveCardAsync(VpnAccessCard row)
+    {
+        row.IssuedAt = string.IsNullOrWhiteSpace(row.AssignedAdUser) ? null : row.IssuedAt ?? DateTime.Now;
+        await RunInventoryActionAsync(async () => await VpnInventoryService.UpdateCardAsync(row), "Karte gespeichert.");
+    }
+
+    private async Task DeleteCardAsync(int id)
+    {
+        await RunInventoryActionAsync(() => VpnInventoryService.DeleteCardAsync(id), "Karte gelöscht.");
+    }
+
+    private async Task RunInventoryActionAsync(Func<Task> action, string successMessage)
+    {
+        inventoryBusy = true;
+        inventoryMessage = string.Empty;
+
+        try
+        {
+            await action();
+            await LoadInventoryAsync();
+            inventoryMessage = successMessage;
+        }
+        catch (DbUpdateException)
+        {
+            inventoryMessage = "Speichern fehlgeschlagen. Serien- oder Kartennummer existiert bereits.";
+        }
+        finally
+        {
+            inventoryBusy = false;
+        }
     }
 
     private async Task LoadAllUsersAsync()
@@ -310,6 +617,8 @@ else
 
     private static string GetUpn(AdUserResult user) =>
         string.IsNullOrWhiteSpace(user.UserPrincipalName) ? user.Email : user.UserPrincipalName;
+
+    private static string FormatDate(DateTime? value) => value?.ToString("dd.MM.yyyy HH:mm") ?? "-";
 
     private static string EncodeHex64(string value)
     {
