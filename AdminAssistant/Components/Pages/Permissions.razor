@@ -1,0 +1,145 @@
+@page "/permissions"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+
+@inject IOuAccessService OuAccessService
+
+<PageTitle>Berechtigungen</PageTitle>
+
+<div class="d-flex align-items-center mb-4 gap-2">
+    <i class="bi bi-shield-check fs-3 text-primary"></i>
+    <div>
+        <h3 class="mb-0">Berechtigungen</h3>
+        <small class="text-muted">OUs für Benutzer- und Gruppenverwaltung dynamisch pflegen</small>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(statusMessage))
+{
+    <div class="alert @statusCss">@statusMessage</div>
+}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Neue OU-Berechtigung hinzufügen</h5>
+        <div class="row g-2 mt-2">
+            <div class="col-md-3">
+                <select class="form-select" @bind="selectedArea">
+                    <option value="@PermissionAreas.UserManagement">Benutzerverwaltung</option>
+                    <option value="@PermissionAreas.GroupManagement">Gruppenverwaltung</option>
+                </select>
+            </div>
+            <div class="col-md-7">
+                <input class="form-control" @bind="newDistinguishedName" placeholder="OU=...,DC=..." />
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-primary" @onclick="AddPermissionAsync">Hinzufügen</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title">Benutzerverwaltung</h5>
+                @RenderPermissionList(PermissionAreas.UserManagement)
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="card-title">Gruppenverwaltung</h5>
+                @RenderPermissionList(PermissionAreas.GroupManagement)
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<OuPermission> permissions = new();
+    private string selectedArea = PermissionAreas.UserManagement;
+    private string newDistinguishedName = string.Empty;
+    private string? statusMessage;
+    private string statusCss = "alert-info";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPermissionsAsync();
+    }
+
+    private async Task LoadPermissionsAsync()
+    {
+        permissions = (await OuAccessService.GetPermissionsAsync()).ToList();
+    }
+
+    private async Task AddPermissionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newDistinguishedName))
+        {
+            statusCss = "alert-warning";
+            statusMessage = "Bitte eine OU eintragen.";
+            return;
+        }
+
+        await OuAccessService.AddPermissionAsync(selectedArea, newDistinguishedName);
+        newDistinguishedName = string.Empty;
+        await LoadPermissionsAsync();
+
+        statusCss = "alert-success";
+        statusMessage = "Berechtigung gespeichert.";
+    }
+
+    private async Task RemovePermissionAsync(int id)
+    {
+        var removed = await OuAccessService.RemovePermissionAsync(id);
+        await LoadPermissionsAsync();
+
+        statusCss = removed ? "alert-success" : "alert-warning";
+        statusMessage = removed ? "Berechtigung entfernt." : "Eintrag nicht gefunden.";
+    }
+
+    private RenderFragment RenderPermissionList(string area) => builder =>
+    {
+        var items = permissions.Where(p => p.Area == area).ToList();
+
+        if (!items.Any())
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "text-muted");
+            builder.AddContent(2, "Keine Einträge vorhanden.");
+            builder.CloseElement();
+            return;
+        }
+
+        builder.OpenElement(3, "ul");
+        builder.AddAttribute(4, "class", "list-group list-group-flush");
+
+        var seq = 5;
+        foreach (var item in items)
+        {
+            builder.OpenElement(seq++, "li");
+            builder.AddAttribute(seq++, "class", "list-group-item d-flex justify-content-between align-items-start gap-2");
+
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "small font-monospace");
+            builder.AddContent(seq++, item.DistinguishedName);
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-danger");
+            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create(this, () => RemovePermissionAsync(item.Id)));
+            builder.AddContent(seq++, "Entfernen");
+            builder.CloseElement();
+
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+}
