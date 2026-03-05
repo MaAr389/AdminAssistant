@@ -61,7 +61,7 @@
     <div class="col-6 col-md-4 col-xl-2">
         <div class="card border-0 bg-secondary-subtle h-100">
             <div class="card-body py-3">
-                <div class="text-muted small">Karten gesamt</div>
+                <div class="text-muted small">Chipkarten gesamt</div>
                 <div class="fs-4 fw-semibold">@inventory.TotalCards</div>
             </div>
         </div>
@@ -69,7 +69,7 @@
     <div class="col-6 col-md-4 col-xl-2">
         <div class="card border-0 bg-warning-subtle h-100">
             <div class="card-body py-3">
-                <div class="text-muted small">Karten vergeben</div>
+                <div class="text-muted small">Chipkarten vergeben</div>
                 <div class="fs-4 fw-semibold">@inventory.AssignedCards</div>
             </div>
         </div>
@@ -143,7 +143,7 @@
                         }
                         else
                         {
-                            @foreach (var row in readerRows)
+                            @foreach (var row in PagedReaderRows)
                             {
                                 <tr>
                                     <td><input class="form-control form-control-sm" @bind="row.SerialNumber" /></td>
@@ -160,12 +160,22 @@
                     </tbody>
                 </table>
             </div>
+            @if (readerRows.Count > PageSize)
+            {
+                <div class="card-footer d-flex justify-content-between align-items-center py-2">
+                    <small class="text-muted">Seite @readerPage von @ReaderTotalPages</small>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" @onclick="() => ChangeReaderPage(-1)" disabled="@(readerPage <= 1)">Zurück</button>
+                        <button class="btn btn-outline-secondary" @onclick="() => ChangeReaderPage(1)" disabled="@(readerPage >= ReaderTotalPages)">Weiter</button>
+                    </div>
+                </div>
+            }
         </div>
     </div>
     <div class="col-12 col-xl-6">
         <div class="card shadow-sm h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-credit-card me-2"></i>Karten</span>
+                <span><i class="bi bi-credit-card me-2"></i>Chipkarten</span>
                 <span class="badge bg-primary">@cardRows.Count</span>
             </div>
             <div class="card-body border-bottom">
@@ -188,7 +198,7 @@
                     </div>
                     <div class="col-12">
                         <button class="btn btn-sm btn-primary" @onclick="AddCardAsync" disabled="@inventoryBusy">
-                            <i class="bi bi-plus-circle me-1"></i>Karte hinzufügen
+                            <i class="bi bi-plus-circle me-1"></i>Chipkarte hinzufügen
                         </button>
                     </div>
                 </div>
@@ -197,7 +207,7 @@
                 <table class="table table-sm table-striped mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>Karte</th>
+                            <th>Chipkarte</th>
                             <th>AD Benutzer</th>
                             <th>PUK</th>
                             <th>Notiz</th>
@@ -208,11 +218,11 @@
                     <tbody>
                         @if (cardRows.Count == 0)
                         {
-                            <tr><td colspan="6" class="text-muted text-center py-3">Keine Karten vorhanden.</td></tr>
+                            <tr><td colspan="6" class="text-muted text-center py-3">Keine Chipkarten vorhanden.</td></tr>
                         }
                         else
                         {
-                            @foreach (var row in cardRows)
+                            @foreach (var row in PagedCardRows)
                             {
                                 <tr>
                                     <td><input class="form-control form-control-sm" @bind="row.CardNumber" /></td>
@@ -230,6 +240,16 @@
                     </tbody>
                 </table>
             </div>
+            @if (cardRows.Count > PageSize)
+            {
+                <div class="card-footer d-flex justify-content-between align-items-center py-2">
+                    <small class="text-muted">Seite @cardPage von @CardTotalPages</small>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" @onclick="() => ChangeCardPage(-1)" disabled="@(cardPage <= 1)">Zurück</button>
+                        <button class="btn btn-outline-secondary" @onclick="() => ChangeCardPage(1)" disabled="@(cardPage >= CardTotalPages)">Weiter</button>
+                    </div>
+                </div>
+            }
         </div>
     </div>
 </div>
@@ -420,6 +440,32 @@ else
         editableTotalLicenses = inventory.TotalLicenses;
         readerRows = await VpnInventoryService.GetReadersAsync();
         cardRows = await VpnInventoryService.GetCardsAsync();
+        EnsureValidPages();
+    }
+
+    private void ChangeReaderPage(int delta)
+    {
+        readerPage = Math.Clamp(readerPage + delta, 1, ReaderTotalPages);
+    }
+
+    private void ChangeCardPage(int delta)
+    {
+        cardPage = Math.Clamp(cardPage + delta, 1, CardTotalPages);
+    }
+
+    private void EnsureValidPages()
+    {
+        readerPage = Math.Clamp(readerPage, 1, ReaderTotalPages);
+        cardPage = Math.Clamp(cardPage, 1, CardTotalPages);
+    }
+
+    private async Task SaveTotalLicensesAsync()
+    {
+        await RunInventoryActionAsync(async () =>
+        {
+            editableTotalLicenses = await VpnInventoryService.UpdateTotalLicensesAsync(editableTotalLicenses);
+            await WriteVpnAuditAsync("Lizenzanzahl aktualisiert", $"Neue Anzahl: {editableTotalLicenses}");
+        }, "Lizenzanzahl gespeichert.");
     }
 
     private async Task SaveTotalLicensesAsync()
@@ -496,7 +542,7 @@ else
             newCardAssignedUser = string.Empty;
             newCardPin = string.Empty;
             newCardNotes = string.Empty;
-        }, "Karte angelegt.");
+        }, "Chipkarte angelegt.");
     }
 
     private async Task SaveCardAsync(VpnAccessCard row)
