@@ -1,11 +1,13 @@
-﻿@page "/dhcp"
+@page "/dhcp"
 @attribute [Authorize(Policy = "AdminOnly")]
 @rendermode InteractiveServer
 
 @using AdminAssistant.Core.Interfaces
 @using AdminAssistant.Core.Models
+@using Microsoft.AspNetCore.Components.Authorization
 
 @inject IDhcpService DhcpService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>DHCP-Verwaltung</PageTitle>
 
@@ -13,6 +15,14 @@
     <span class="bi bi-hdd-network me-2 fs-4 text-primary"></span>
     <h3 class="mb-0">DHCP-Verwaltung</h3>
 </div>
+
+@if (!string.IsNullOrWhiteSpace(statusMessage))
+{
+    <div class="alert @(statusIsError ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
+        @statusMessage
+        <button type="button" class="btn-close" @onclick="() => statusMessage = null"></button>
+    </div>
+}
 
 @if (isLoadingScopes)
 {
@@ -31,7 +41,6 @@ else if (scopes == null || !scopes.Any())
 else
 {
     <div class="row g-3">
-        <!-- Scopes -->
         <div class="col-md-4">
             <div class="card shadow-sm">
                 <div class="card-header fw-semibold">
@@ -40,8 +49,7 @@ else
                 <div class="list-group list-group-flush">
                     @foreach (var s in scopes)
                     {
-                        <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center
-                                              @(selectedScopeId == s.ScopeId ? "active" : "")"
+                        <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(selectedScopeId == s.ScopeId ? "active" : "")"
                                 @onclick="() => SelectScope(s.ScopeId)">
                             <div>
                                 <div class="fw-semibold">@s.Name</div>
@@ -54,9 +62,8 @@ else
             </div>
         </div>
 
-        <!-- Leases -->
         <div class="col-md-8">
-            <div class="card shadow-sm">
+            <div class="card shadow-sm mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span>
                         <i class="bi bi-list-ul me-2"></i>
@@ -86,11 +93,11 @@ else
                 }
                 else
                 {
-                    var filtered = leases.Where(l =>
+                    var filteredLeases = leases.Where(l =>
                     string.IsNullOrWhiteSpace(leaseFilter)
                     || l.IpAddress.Contains(leaseFilter, StringComparison.OrdinalIgnoreCase)
                     || l.MacAddress.Contains(leaseFilter, StringComparison.OrdinalIgnoreCase)
-                    || (l.Hostname ?? "").Contains(leaseFilter, StringComparison.OrdinalIgnoreCase));
+                    || (l.Hostname ?? string.Empty).Contains(leaseFilter, StringComparison.OrdinalIgnoreCase));
 
                     <div class="table-responsive">
                         <table class="table table-hover mb-0 align-middle">
@@ -101,25 +108,118 @@ else
                                     <th>Hostname</th>
                                     <th>Ablauf</th>
                                     <th>Status</th>
+                                    <th class="text-end">Aktionen</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var lease in filtered)
+                                @foreach (var lease in filteredLeases)
                                 {
                                     <tr>
                                         <td><code>@lease.IpAddress</code></td>
                                         <td class="text-muted">@lease.MacAddress</td>
                                         <td>@lease.Hostname</td>
-                                        <td class="text-muted">
-                                            @(lease.LeaseExpires.HasValue
-                                                                            ? lease.LeaseExpires.Value.ToString("dd.MM.yyyy HH:mm")
-                                                                            : "–")
-                            </td>
-                            <td>
-                                <span class="badge bg-secondary">@lease.AddressState</span>
-                            </td>
-                        </tr>
-                                                }
+                                        <td class="text-muted">@(lease.LeaseExpires?.ToString("dd.MM.yyyy HH:mm") ?? "–")</td>
+                                        <td><span class="badge bg-secondary">@lease.AddressState</span></td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    disabled="@isBusy"
+                                                    @onclick="() => RemoveLease(lease.IpAddress)">
+                                                Lease löschen
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-pin-map me-2"></i>Reservierungen</span>
+                    <input class="form-control form-control-sm w-auto"
+                           placeholder="Filter (IP / MAC / Name)"
+                           @bind="reservationFilter" />
+                </div>
+
+                <div class="card-body border-bottom bg-light">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label mb-1">IP-Adresse</label>
+                            <input class="form-control form-control-sm" @bind="newReservation.IpAddress" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label mb-1">MAC-Adresse</label>
+                            <input class="form-control form-control-sm" @bind="newReservation.MacAddress" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label mb-1">Name</label>
+                            <input class="form-control form-control-sm" @bind="newReservation.Name" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label mb-1">Beschreibung</label>
+                            <input class="form-control form-control-sm" @bind="newReservation.Description" />
+                        </div>
+                        <div class="col-md-1 d-grid">
+                            <button class="btn btn-sm btn-primary"
+                                    disabled="@isBusy"
+                                    @onclick="AddReservation">
+                                Hinzu
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                @if (isLoadingReservations)
+                {
+                    <div class="card-body text-center text-muted">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        Lade Reservierungen...
+                    </div>
+                }
+                else if (reservations == null || !reservations.Any())
+                {
+                    <div class="card-body text-muted">
+                        Keine Reservierungen vorhanden oder kein Scope ausgewählt.
+                    </div>
+                }
+                else
+                {
+                    var filteredReservations = reservations.Where(r =>
+                    string.IsNullOrWhiteSpace(reservationFilter)
+                    || r.IpAddress.Contains(reservationFilter, StringComparison.OrdinalIgnoreCase)
+                    || r.MacAddress.Contains(reservationFilter, StringComparison.OrdinalIgnoreCase)
+                    || (r.Name ?? string.Empty).Contains(reservationFilter, StringComparison.OrdinalIgnoreCase));
+
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>IP-Adresse</th>
+                                    <th>MAC</th>
+                                    <th>Name</th>
+                                    <th>Beschreibung</th>
+                                    <th class="text-end">Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var reservation in filteredReservations)
+                                {
+                                    <tr>
+                                        <td><code>@reservation.IpAddress</code></td>
+                                        <td class="text-muted">@reservation.MacAddress</td>
+                                        <td>@reservation.Name</td>
+                                        <td>@reservation.Description</td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    disabled="@isBusy"
+                                                    @onclick="() => RemoveReservation(reservation.IpAddress)">
+                                                Entfernen
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
                             </tbody>
                         </table>
                     </div>
@@ -132,10 +232,19 @@ else
 @code {
     private IEnumerable<DhcpScope>? scopes;
     private IEnumerable<DhcpLease>? leases;
+    private IEnumerable<DhcpReservation>? reservations;
+    private readonly DhcpReservation newReservation = new();
+
     private bool isLoadingScopes = true;
-    private bool isLoadingLeases = false;
+    private bool isLoadingLeases;
+    private bool isLoadingReservations;
+    private bool isBusy;
+
     private string? selectedScopeId;
     private string leaseFilter = string.Empty;
+    private string reservationFilter = string.Empty;
+    private string? statusMessage;
+    private bool statusIsError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -146,11 +255,103 @@ else
     private async Task SelectScope(string scopeId)
     {
         selectedScopeId = scopeId;
-        leases = null;
-        isLoadingLeases = true;
+        newReservation.ScopeId = scopeId;
+        await LoadScopeData();
+    }
 
-        leases = await DhcpService.GetLeasesAsync(scopeId);
+    private async Task LoadScopeData()
+    {
+        if (string.IsNullOrWhiteSpace(selectedScopeId))
+        {
+            return;
+        }
+
+        leases = null;
+        reservations = null;
+        isLoadingLeases = true;
+        isLoadingReservations = true;
+
+        leases = await DhcpService.GetLeasesAsync(selectedScopeId);
+        reservations = await DhcpService.GetReservationsAsync(selectedScopeId);
 
         isLoadingLeases = false;
+        isLoadingReservations = false;
+    }
+
+    private async Task RemoveLease(string ipAddress)
+    {
+        if (string.IsNullOrWhiteSpace(selectedScopeId))
+        {
+            return;
+        }
+
+        isBusy = true;
+        var success = await DhcpService.RemoveLeaseAsync(selectedScopeId, ipAddress, await GetCurrentUserAsync());
+        await LoadScopeData();
+        isBusy = false;
+
+        ShowStatus(success, success
+            ? $"Lease {ipAddress} wurde gelöscht."
+            : $"Lease {ipAddress} konnte nicht gelöscht werden.");
+    }
+
+    private async Task AddReservation()
+    {
+        if (string.IsNullOrWhiteSpace(selectedScopeId)
+            || string.IsNullOrWhiteSpace(newReservation.IpAddress)
+            || string.IsNullOrWhiteSpace(newReservation.MacAddress)
+            || string.IsNullOrWhiteSpace(newReservation.Name))
+        {
+            ShowStatus(false, "Für eine Reservierung werden Scope, IP, MAC und Name benötigt.");
+            return;
+        }
+
+        newReservation.ScopeId = selectedScopeId;
+
+        isBusy = true;
+        var success = await DhcpService.AddReservationAsync(newReservation, await GetCurrentUserAsync());
+        await LoadScopeData();
+        isBusy = false;
+
+        if (success)
+        {
+            newReservation.IpAddress = string.Empty;
+            newReservation.MacAddress = string.Empty;
+            newReservation.Name = string.Empty;
+            newReservation.Description = string.Empty;
+        }
+
+        ShowStatus(success, success
+            ? "Reservierung wurde hinzugefügt."
+            : "Reservierung konnte nicht hinzugefügt werden.");
+    }
+
+    private async Task RemoveReservation(string ipAddress)
+    {
+        if (string.IsNullOrWhiteSpace(selectedScopeId))
+        {
+            return;
+        }
+
+        isBusy = true;
+        var success = await DhcpService.RemoveReservationAsync(selectedScopeId, ipAddress, await GetCurrentUserAsync());
+        await LoadScopeData();
+        isBusy = false;
+
+        ShowStatus(success, success
+            ? $"Reservierung {ipAddress} wurde entfernt."
+            : $"Reservierung {ipAddress} konnte nicht entfernt werden.");
+    }
+
+    private async Task<string> GetCurrentUserAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        return authState.User.Identity?.Name ?? "Unbekannt";
+    }
+
+    private void ShowStatus(bool success, string message)
+    {
+        statusIsError = !success;
+        statusMessage = message;
     }
 }
