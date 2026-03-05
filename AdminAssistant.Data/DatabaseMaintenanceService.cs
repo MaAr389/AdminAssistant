@@ -104,42 +104,11 @@ public class DatabaseMaintenanceService : IDatabaseMaintenanceService
 
         if (string.IsNullOrWhiteSpace(dataSource))
         {
-            var connectionString = _db.Database.GetConnectionString();
-            if (!string.IsNullOrWhiteSpace(connectionString))
-            {
-                var builder = new SqliteConnectionStringBuilder(connectionString);
-                dataSource = builder.DataSource;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(dataSource))
-        {
             throw new InvalidOperationException("Datenbankpfad konnte nicht ermittelt werden.");
         }
 
-        if (dataSource.Equals(":memory:", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("In-Memory-Datenbank kann nicht gesichert oder zurückgespielt werden.");
-        }
-
-        if (Path.IsPathRooted(dataSource))
-        {
-            return Path.GetFullPath(dataSource);
-        }
-
-        var currentDirectoryPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), dataSource));
-        if (File.Exists(currentDirectoryPath))
-        {
-            return currentDirectoryPath;
-        }
-
-        var appBasePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, dataSource));
-        if (File.Exists(appBasePath))
-        {
-            return appBasePath;
-        }
-
-        // Fallback für Erststart: bevorzugt das Arbeitsverzeichnis (entspricht ASP.NET ContentRoot).
-        return currentDirectoryPath;
+        return Path.IsPathRooted(dataSource)
+            ? dataSource
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, dataSource));
     }
 }
