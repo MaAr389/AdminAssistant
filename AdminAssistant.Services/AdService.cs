@@ -376,11 +376,7 @@ public class AdService : IAdService
             if (isAdmin)
                 return results;
 
-            var allowedOUs = _config.GetSection("GroupManagement:AllowedOUs")
-                                    .Get<List<string>>() ?? new();
-
-            return results.Where(g => allowedOUs.Any(ou =>
-                g.DistinguishedName.EndsWith(ou, StringComparison.OrdinalIgnoreCase)))
+            return results.Where(g => _ouAccessService.CanAccessGroup(g.DistinguishedName, false))
                 .ToList();
         });
     }
@@ -410,7 +406,6 @@ public class AdService : IAdService
                     Description = g.Description ?? string.Empty
                 });
 
-<<<<<<< codex/add-dynamic-permissions-management-tab
             if (!isAdmin)
             {
                 query = query
@@ -418,11 +413,8 @@ public class AdService : IAdService
             }
 
             return query
+                .OrderBy(g => g.Name)
                 .Take(50)
-=======
-            return results
-                .Where(g => _ouAccessService.CanAccessGroup(g.DistinguishedName, false))
->>>>>>> master
                 .ToList();
         });
     }

@@ -17,5 +17,7 @@ public enum AuditAction
     UserAttributeUpdate,
     VpnInventoryChange,
     DatabaseBackup,
-    DatabaseRestore
+    DatabaseRestore,
+    OuPermissionAdd,
+    OuPermissionRemove
 }

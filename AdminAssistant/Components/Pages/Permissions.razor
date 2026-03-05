@@ -4,8 +4,10 @@
 
 @using AdminAssistant.Core.Interfaces
 @using AdminAssistant.Core.Models
+@using Microsoft.AspNetCore.Components.Authorization
 
 @inject IOuAccessService OuAccessService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Berechtigungen</PageTitle>
 
@@ -87,7 +89,10 @@
             return;
         }
 
-        await OuAccessService.AddPermissionAsync(selectedArea, newDistinguishedName);
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var performedBy = authState.User?.Identity?.Name ?? "Unbekannt";
+
+        await OuAccessService.AddPermissionAsync(selectedArea, newDistinguishedName, performedBy);
         newDistinguishedName = string.Empty;
         await LoadPermissionsAsync();
 
@@ -97,7 +102,10 @@
 
     private async Task RemovePermissionAsync(int id)
     {
-        var removed = await OuAccessService.RemovePermissionAsync(id);
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var performedBy = authState.User?.Identity?.Name ?? "Unbekannt";
+
+        var removed = await OuAccessService.RemovePermissionAsync(id, performedBy);
         await LoadPermissionsAsync();
 
         statusCss = removed ? "alert-success" : "alert-warning";
