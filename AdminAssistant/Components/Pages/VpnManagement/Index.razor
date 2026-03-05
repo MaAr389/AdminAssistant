@@ -2,16 +2,19 @@
 @attribute [Authorize(Policy = "KeyUserOnly")]
 @rendermode InteractiveServer
 
+@using System.Security.Claims
 @using System.Text
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
+@using AdminAssistant.Core.Enums
 @using AdminAssistant.Core.Interfaces
 @using AdminAssistant.Core.Models
 
 @inject IAdService AdService
 @inject IOuAccessService OuAccessService
 @inject IVpnInventoryService VpnInventoryService
+@inject IAuditLogService AuditLogService
 @inject AuthenticationStateProvider AuthProvider
 @inject IJSRuntime JS
 
@@ -73,6 +76,22 @@
     </div>
 </div>
 
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-4 col-xl-3">
+                <label class="form-label small">VPN-Lizenzanzahl</label>
+                <input type="number" min="0" class="form-control form-control-sm" @bind="editableTotalLicenses" />
+            </div>
+            <div class="col-12 col-md-auto">
+                <button class="btn btn-sm btn-primary" @onclick="SaveTotalLicensesAsync" disabled="@inventoryBusy">
+                    <i class="bi bi-save me-1"></i>Lizenzen speichern
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 @if (!string.IsNullOrWhiteSpace(inventoryMessage))
 {
     <div class="alert alert-info py-2">@inventoryMessage</div>
@@ -93,7 +112,7 @@
                     </div>
                     <div class="col-12 col-md-4">
                         <label class="form-label small">AD Benutzer</label>
-                        <input class="form-control form-control-sm" @bind="newReaderAssignedUser" placeholder="DOM\\user oder UPN" />
+                        <input class="form-control form-control-sm" value="@newReaderAssignedUser" @oninput="OnNewReaderAssignedUserInputAsync" list="vpn-ad-user-suggestions" placeholder="DOM\\user oder UPN" />
                     </div>
                     <div class="col-12 col-md-4">
                         <label class="form-label small">Beschreibung</label>
@@ -128,7 +147,7 @@
                             {
                                 <tr>
                                     <td><input class="form-control form-control-sm" @bind="row.SerialNumber" /></td>
-                                    <td><input class="form-control form-control-sm" @bind="row.AssignedAdUser" /></td>
+                                    <td><input class="form-control form-control-sm" value="@row.AssignedAdUser" @oninput="e => OnReaderAssignedUserInputAsync(row, e)" list="vpn-ad-user-suggestions" /></td>
                                     <td><input class="form-control form-control-sm" @bind="row.Description" /></td>
                                     <td>@FormatDate(row.AssignedAt)</td>
                                     <td class="text-nowrap">
@@ -157,10 +176,10 @@
                     </div>
                     <div class="col-12 col-md-3">
                         <label class="form-label small">AD Benutzer</label>
-                        <input class="form-control form-control-sm" @bind="newCardAssignedUser" />
+                        <input class="form-control form-control-sm" value="@newCardAssignedUser" @oninput="OnNewCardAssignedUserInputAsync" list="vpn-ad-user-suggestions" />
                     </div>
                     <div class="col-12 col-md-2">
-                        <label class="form-label small">PIN</label>
+                        <label class="form-label small">PUK</label>
                         <input class="form-control form-control-sm" @bind="newCardPin" />
                     </div>
                     <div class="col-12 col-md-4">
@@ -180,7 +199,7 @@
                         <tr>
                             <th>Karte</th>
                             <th>AD Benutzer</th>
-                            <th>PIN</th>
+                            <th>PUK</th>
                             <th>Notiz</th>
                             <th>Ausgegeben</th>
                             <th style="width:130px"></th>
@@ -197,7 +216,7 @@
                             {
                                 <tr>
                                     <td><input class="form-control form-control-sm" @bind="row.CardNumber" /></td>
-                                    <td><input class="form-control form-control-sm" @bind="row.AssignedAdUser" /></td>
+                                    <td><input class="form-control form-control-sm" value="@row.AssignedAdUser" @oninput="e => OnCardAssignedUserInputAsync(row, e)" list="vpn-ad-user-suggestions" /></td>
                                     <td><input class="form-control form-control-sm" @bind="row.Pin" /></td>
                                     <td><input class="form-control form-control-sm" @bind="row.Notes" /></td>
                                     <td>@FormatDate(row.IssuedAt)</td>
@@ -350,6 +369,13 @@ else
     </div>
 }
 
+<datalist id="vpn-ad-user-suggestions">
+    @foreach (var suggestion in adUserSuggestions)
+    {
+        <option value="@suggestion.SamAccountName">@suggestion.DisplayName (@GetUpn(suggestion))</option>
+    }
+</datalist>
+
 @code {
     private bool isLoading;
     private bool isAdmin;
@@ -370,6 +396,9 @@ else
     private string newCardAssignedUser = string.Empty;
     private string newCardPin = string.Empty;
     private string newCardNotes = string.Empty;
+    private int editableTotalLicenses;
+
+    private List<AdUserResult> adUserSuggestions = new();
 
     private readonly HashSet<string> selectedUsers = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<EncodedVpnUser> encodedResults = new();
@@ -388,8 +417,18 @@ else
     private async Task LoadInventoryAsync()
     {
         inventory = await VpnInventoryService.GetOverviewAsync();
+        editableTotalLicenses = inventory.TotalLicenses;
         readerRows = await VpnInventoryService.GetReadersAsync();
         cardRows = await VpnInventoryService.GetCardsAsync();
+    }
+
+    private async Task SaveTotalLicensesAsync()
+    {
+        await RunInventoryActionAsync(async () =>
+        {
+            editableTotalLicenses = await VpnInventoryService.UpdateTotalLicensesAsync(editableTotalLicenses);
+            await WriteVpnAuditAsync("Lizenzanzahl aktualisiert", $"Neue Anzahl: {editableTotalLicenses}");
+        }, "Lizenzanzahl gespeichert.");
     }
 
     private async Task AddReaderAsync()
@@ -408,6 +447,7 @@ else
         await RunInventoryActionAsync(async () =>
         {
             await VpnInventoryService.AddReaderAsync(entity);
+            await WriteVpnAuditAsync("Smartcardreader angelegt", DescribeReader(entity));
             newReaderSerial = string.Empty;
             newReaderAssignedUser = string.Empty;
             newReaderDescription = string.Empty;
@@ -417,12 +457,21 @@ else
     private async Task SaveReaderAsync(VpnSmartcardReader row)
     {
         row.AssignedAt = string.IsNullOrWhiteSpace(row.AssignedAdUser) ? null : row.AssignedAt ?? DateTime.Now;
-        await RunInventoryActionAsync(async () => await VpnInventoryService.UpdateReaderAsync(row), "Reader gespeichert.");
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.UpdateReaderAsync(row);
+            await WriteVpnAuditAsync("Smartcardreader aktualisiert", DescribeReader(row));
+        }, "Reader gespeichert.");
     }
 
     private async Task DeleteReaderAsync(int id)
     {
-        await RunInventoryActionAsync(() => VpnInventoryService.DeleteReaderAsync(id), "Reader gelöscht.");
+        var reader = readerRows.FirstOrDefault(x => x.Id == id);
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.DeleteReaderAsync(id);
+            await WriteVpnAuditAsync("Smartcardreader gelöscht", reader is null ? $"ID: {id}" : DescribeReader(reader));
+        }, "Reader gelöscht.");
     }
 
     private async Task AddCardAsync()
@@ -442,6 +491,7 @@ else
         await RunInventoryActionAsync(async () =>
         {
             await VpnInventoryService.AddCardAsync(entity);
+            await WriteVpnAuditAsync("Chipkarte angelegt", DescribeCard(entity));
             newCardNumber = string.Empty;
             newCardAssignedUser = string.Empty;
             newCardPin = string.Empty;
@@ -452,13 +502,86 @@ else
     private async Task SaveCardAsync(VpnAccessCard row)
     {
         row.IssuedAt = string.IsNullOrWhiteSpace(row.AssignedAdUser) ? null : row.IssuedAt ?? DateTime.Now;
-        await RunInventoryActionAsync(async () => await VpnInventoryService.UpdateCardAsync(row), "Karte gespeichert.");
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.UpdateCardAsync(row);
+            await WriteVpnAuditAsync("Chipkarte aktualisiert", DescribeCard(row));
+        }, "Karte gespeichert.");
     }
 
     private async Task DeleteCardAsync(int id)
     {
-        await RunInventoryActionAsync(() => VpnInventoryService.DeleteCardAsync(id), "Karte gelöscht.");
+        var card = cardRows.FirstOrDefault(x => x.Id == id);
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.DeleteCardAsync(id);
+            await WriteVpnAuditAsync("Chipkarte gelöscht", card is null ? $"ID: {id}" : DescribeCard(card));
+        }, "Karte gelöscht.");
     }
+
+    private async Task OnNewReaderAssignedUserInputAsync(ChangeEventArgs e)
+    {
+        newReaderAssignedUser = e.Value?.ToString() ?? string.Empty;
+        await UpdateAdUserSuggestionsAsync(newReaderAssignedUser);
+    }
+
+    private async Task OnReaderAssignedUserInputAsync(VpnSmartcardReader row, ChangeEventArgs e)
+    {
+        row.AssignedAdUser = e.Value?.ToString() ?? string.Empty;
+        await UpdateAdUserSuggestionsAsync(row.AssignedAdUser);
+    }
+
+    private async Task OnNewCardAssignedUserInputAsync(ChangeEventArgs e)
+    {
+        newCardAssignedUser = e.Value?.ToString() ?? string.Empty;
+        await UpdateAdUserSuggestionsAsync(newCardAssignedUser);
+    }
+
+    private async Task OnCardAssignedUserInputAsync(VpnAccessCard row, ChangeEventArgs e)
+    {
+        row.AssignedAdUser = e.Value?.ToString() ?? string.Empty;
+        await UpdateAdUserSuggestionsAsync(row.AssignedAdUser);
+    }
+
+    private async Task UpdateAdUserSuggestionsAsync(string search)
+    {
+        if (string.IsNullOrWhiteSpace(search) || search.Length < 2)
+        {
+            adUserSuggestions.Clear();
+            return;
+        }
+
+        adUserSuggestions = (await AdService.SearchUsersAsync(search))
+            .Where(u => OuAccessService.CanAccessUser(u.DistinguishedName, isAdmin))
+            .OrderBy(u => u.DisplayName)
+            .Take(10)
+            .ToList();
+    }
+
+    private async Task WriteVpnAuditAsync(string actionName, string details)
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var performedBy = authState.User.Identity?.Name
+            ?? authState.User.FindFirstValue(ClaimTypes.Name)
+            ?? "Unbekannt";
+
+        await AuditLogService.LogAsync(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            Action = AuditAction.VpnInventoryChange,
+            PerformedBy = performedBy,
+            TargetUser = "VPN-Inventar",
+            ExecutedVia = "AdminAssistant",
+            Success = true,
+            Details = $"{actionName} | {details}"
+        });
+    }
+
+    private static string DescribeReader(VpnSmartcardReader reader) =>
+        $"Seriennummer: {reader.SerialNumber} | AD Benutzer: {reader.AssignedAdUser ?? "-"} | Beschreibung: {reader.Description ?? "-"}";
+
+    private static string DescribeCard(VpnAccessCard card) =>
+        $"Kartennummer: {card.CardNumber} | AD Benutzer: {card.AssignedAdUser ?? "-"} | PUK: {card.Pin ?? "-"} | Notiz: {card.Notes ?? "-"}";
 
     private async Task RunInventoryActionAsync(Func<Task> action, string successMessage)
     {
