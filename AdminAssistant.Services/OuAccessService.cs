@@ -21,7 +21,7 @@ public class OuAccessService : IOuAccessService
         => CanAccess(distinguishedName, isAdmin, PermissionAreas.UserManagement, "ActiveDirectory:KeyUserAllowedOUs", containsMatch: true);
 
     public bool CanAccessGroup(string distinguishedName, bool isAdmin)
-        => CanAccess(distinguishedName, isAdmin, PermissionAreas.GroupManagement, "GroupManagement:AllowedOUs", containsMatch: false);
+        => CanAccess(distinguishedName, isAdmin, PermissionAreas.GroupManagement, "GroupManagement:AllowedOUs", containsMatch: true);
 
     public async Task<IReadOnlyList<OuPermission>> GetPermissionsAsync()
     {
