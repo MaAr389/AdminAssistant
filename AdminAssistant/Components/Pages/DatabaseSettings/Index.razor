@@ -1,0 +1,216 @@
+@page "/database-settings"
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+
+@using AdminAssistant.Core.Interfaces
+@using AdminAssistant.Core.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using AdminAssistant.Core.Enums
+@using System.Security.Claims
+
+@inject IDatabaseMaintenanceService DatabaseMaintenanceService
+@inject IAuditLogService AuditLogService
+@inject AuthenticationStateProvider AuthProvider
+@inject IHttpContextAccessor HttpContextAccessor
+
+<PageTitle>Datenbankeinstellungen</PageTitle>
+
+<div class="d-flex align-items-center mb-4 gap-2">
+    <i class="bi bi-database-gear fs-3 text-primary"></i>
+    <div>
+        <h3 class="mb-0">Datenbankeinstellungen</h3>
+        <small class="text-muted">Statistik anzeigen, Backup erstellen, Datenbank zurückspielen</small>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div class="alert @statusCssClass" role="alert">
+        @statusMessage
+    </div>
+}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6 col-xl-3">
+        <div class="card border-0 shadow-sm bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="fs-4 fw-bold">@((stats?.SizeBytes / 1024d / 1024d).GetValueOrDefault(0).ToString("0.00")) MB</div>
+                <small>Datenbankgröße</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-3">
+        <div class="card border-0 shadow-sm bg-success text-white h-100">
+            <div class="card-body">
+                <div class="fs-4 fw-bold">@(stats?.TableRowCounts.Values.Sum() ?? 0)</div>
+                <small>Gesamteinträge</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-3">
+        <div class="card border-0 shadow-sm bg-info text-white h-100">
+            <div class="card-body">
+                <div class="fs-4 fw-bold">@((stats?.Exists ?? false) ? "Vorhanden" : "Fehlt")</div>
+                <small>Dateistatus</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-xl-3">
+        <div class="card border-0 shadow-sm bg-dark text-white h-100">
+            <div class="card-body">
+                <div class="fw-semibold">@stats?.LastModifiedUtc?.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")</div>
+                <small>Letzte Änderung</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5 class="card-title mb-3"><i class="bi bi-bar-chart-line me-2"></i>Statistik</h5>
+
+        @if (stats is null)
+        {
+            <div class="text-muted">Statistiken werden geladen ...</div>
+        }
+        else
+        {
+            <ul class="list-group list-group-flush">
+                @foreach (var table in stats.TableRowCounts)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold">@table.Key</span>
+                        <span class="badge bg-secondary rounded-pill">@table.Value</span>
+                    </li>
+                }
+            </ul>
+            <div class="mt-3 small text-muted font-monospace">@stats.DatabasePath</div>
+        }
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h5 class="card-title mb-3"><i class="bi bi-download me-2"></i>Datenbank sichern</h5>
+        <button class="btn btn-primary" @onclick="CreateBackupAsync" disabled="@isBusy">
+            <i class="bi bi-save me-1"></i>Backup erstellen
+        </button>
+    </div>
+</div>
+
+<div class="card shadow-sm border-warning">
+    <div class="card-body">
+        <h5 class="card-title mb-3 text-warning"><i class="bi bi-upload me-2"></i>Datenbank zurückspielen</h5>
+        <p class="text-muted">Nur SQLite-Backups (.db) verwenden. Vor dem Zurückspielen wird automatisch eine Sicherheitskopie erzeugt.</p>
+
+        <InputFile OnChange="OnBackupFileSelected" class="form-control mb-3" accept=".db" />
+
+        @if (!string.IsNullOrEmpty(selectedFileName))
+        {
+            <div class="mb-3 small">Ausgewählte Datei: <strong>@selectedFileName</strong></div>
+        }
+
+        <button class="btn btn-warning" @onclick="RestoreBackupAsync" disabled="@(selectedFile is null || isBusy)">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Zurückspielen
+        </button>
+    </div>
+</div>
+
+@code {
+    private DatabaseStatistics? stats;
+    private IBrowserFile? selectedFile;
+    private string selectedFileName = string.Empty;
+    private bool isBusy;
+    private string? statusMessage;
+    private string statusCssClass = "alert-info";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatisticsAsync();
+    }
+
+    private async Task LoadStatisticsAsync()
+    {
+        stats = await DatabaseMaintenanceService.GetStatisticsAsync();
+    }
+
+    private async Task CreateBackupAsync()
+    {
+        isBusy = true;
+        try
+        {
+            var backupPath = await DatabaseMaintenanceService.BackupAsync();
+            statusCssClass = "alert-success";
+            statusMessage = $"Backup erfolgreich erstellt: {backupPath}";
+            await WriteDatabaseAuditAsync(AuditAction.DatabaseBackup, true, $"Backup erstellt | {backupPath}");
+            await LoadStatisticsAsync();
+        }
+        catch (Exception ex)
+        {
+            await WriteDatabaseAuditAsync(AuditAction.DatabaseBackup, false, "Backup fehlgeschlagen", ex.Message);
+            statusCssClass = "alert-danger";
+            statusMessage = $"Backup fehlgeschlagen: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void OnBackupFileSelected(InputFileChangeEventArgs args)
+    {
+        selectedFile = args.File;
+        selectedFileName = selectedFile.Name;
+    }
+
+    private async Task RestoreBackupAsync()
+    {
+        if (selectedFile is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        try
+        {
+            await using var stream = selectedFile.OpenReadStream(1024 * 1024 * 250);
+            await DatabaseMaintenanceService.RestoreAsync(stream, selectedFile.Name);
+            statusCssClass = "alert-success";
+            statusMessage = $"Datenbank wurde aus '{selectedFile.Name}' zurückgespielt.";
+            await WriteDatabaseAuditAsync(AuditAction.DatabaseRestore, true, $"Restore erfolgreich | Datei: {selectedFile.Name}");
+            await LoadStatisticsAsync();
+        }
+        catch (Exception ex)
+        {
+            await WriteDatabaseAuditAsync(AuditAction.DatabaseRestore, false, $"Restore fehlgeschlagen | Datei: {selectedFile.Name}", ex.Message);
+            statusCssClass = "alert-danger";
+            statusMessage = $"Restore fehlgeschlagen: {ex.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+    private async Task WriteDatabaseAuditAsync(AuditAction action, bool success, string details, string? errorMessage = null)
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var performedBy = authState.User.Identity?.Name
+            ?? authState.User.FindFirstValue(ClaimTypes.Name)
+            ?? "Unbekannt";
+
+        await AuditLogService.LogAsync(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            Action = action,
+            PerformedBy = performedBy,
+            TargetUser = "Datenbank",
+            ExecutedVia = "AdminAssistant",
+            Success = success,
+            ErrorMessage = errorMessage,
+            IPAddress = HttpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString(),
+            Details = details
+        });
+    }
+
+}
