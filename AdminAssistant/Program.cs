@@ -47,7 +47,6 @@ builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IVpnInventoryService, VpnInventoryService>();
 builder.Services.AddScoped<IAdService, AdService>();
 builder.Services.AddScoped<IOuAccessService, OuAccessService>();
-builder.Services.AddScoped<IDhcpService, DhcpService>();
 builder.Services.AddScoped<IDatabaseMaintenanceService, DatabaseMaintenanceService>();
 
 builder.Services.AddHttpContextAccessor();
