@@ -14,5 +14,6 @@ public enum AuditAction
     AccountEnable,      // vorbereitet für später
     GroupMemberAdd,     // vorbereitet für später
     GroupMemberRemove,   // vorbereitet für später
-    UserAttributeUpdate
+    UserAttributeUpdate,
+    VpnInventoryChange
 }

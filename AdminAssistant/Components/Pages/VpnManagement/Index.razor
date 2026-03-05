@@ -2,16 +2,19 @@
 @attribute [Authorize(Policy = "KeyUserOnly")]
 @rendermode InteractiveServer
 
+@using System.Security.Claims
 @using System.Text
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.JSInterop
+@using AdminAssistant.Core.Enums
 @using AdminAssistant.Core.Interfaces
 @using AdminAssistant.Core.Models
 
 @inject IAdService AdService
 @inject IOuAccessService OuAccessService
 @inject IVpnInventoryService VpnInventoryService
+@inject IAuditLogService AuditLogService
 @inject AuthenticationStateProvider AuthProvider
 @inject IJSRuntime JS
 
@@ -58,7 +61,7 @@
     <div class="col-6 col-md-4 col-xl-2">
         <div class="card border-0 bg-secondary-subtle h-100">
             <div class="card-body py-3">
-                <div class="text-muted small">Karten gesamt</div>
+                <div class="text-muted small">Chipkarten gesamt</div>
                 <div class="fs-4 fw-semibold">@inventory.TotalCards</div>
             </div>
         </div>
@@ -66,8 +69,24 @@
     <div class="col-6 col-md-4 col-xl-2">
         <div class="card border-0 bg-warning-subtle h-100">
             <div class="card-body py-3">
-                <div class="text-muted small">Karten vergeben</div>
+                <div class="text-muted small">Chipkarten vergeben</div>
                 <div class="fs-4 fw-semibold">@inventory.AssignedCards</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-4 col-xl-3">
+                <label class="form-label small">VPN-Lizenzanzahl</label>
+                <input type="number" min="0" class="form-control form-control-sm" @bind="editableTotalLicenses" />
+            </div>
+            <div class="col-12 col-md-auto">
+                <button class="btn btn-sm btn-primary" @onclick="SaveTotalLicensesAsync" disabled="@inventoryBusy">
+                    <i class="bi bi-save me-1"></i>Lizenzen speichern
+                </button>
             </div>
         </div>
     </div>
@@ -93,7 +112,7 @@
                     </div>
                     <div class="col-12 col-md-4">
                         <label class="form-label small">AD Benutzer</label>
-                        <input class="form-control form-control-sm" @bind="newReaderAssignedUser" placeholder="DOM\\user oder UPN" />
+                        <input class="form-control form-control-sm" value="@newReaderAssignedUser" @oninput="OnNewReaderAssignedUserInputAsync" list="vpn-ad-user-suggestions" placeholder="DOM\\user oder UPN" />
                     </div>
                     <div class="col-12 col-md-4">
                         <label class="form-label small">Beschreibung</label>
@@ -124,11 +143,11 @@
                         }
                         else
                         {
-                            @foreach (var row in readerRows)
+                            @foreach (var row in PagedReaderRows)
                             {
                                 <tr>
                                     <td><input class="form-control form-control-sm" @bind="row.SerialNumber" /></td>
-                                    <td><input class="form-control form-control-sm" @bind="row.AssignedAdUser" /></td>
+                                    <td><input class="form-control form-control-sm" value="@row.AssignedAdUser" @oninput="e => OnReaderAssignedUserInputAsync(row, e)" list="vpn-ad-user-suggestions" /></td>
                                     <td><input class="form-control form-control-sm" @bind="row.Description" /></td>
                                     <td>@FormatDate(row.AssignedAt)</td>
                                     <td class="text-nowrap">
@@ -141,12 +160,22 @@
                     </tbody>
                 </table>
             </div>
+            @if (readerRows.Count > PageSize)
+            {
+                <div class="card-footer d-flex justify-content-between align-items-center py-2">
+                    <small class="text-muted">Seite @readerPage von @ReaderTotalPages</small>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" @onclick="() => ChangeReaderPage(-1)" disabled="@(readerPage <= 1)">Zurück</button>
+                        <button class="btn btn-outline-secondary" @onclick="() => ChangeReaderPage(1)" disabled="@(readerPage >= ReaderTotalPages)">Weiter</button>
+                    </div>
+                </div>
+            }
         </div>
     </div>
     <div class="col-12 col-xl-6">
         <div class="card shadow-sm h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-credit-card me-2"></i>Karten</span>
+                <span><i class="bi bi-credit-card me-2"></i>Chipkarten</span>
                 <span class="badge bg-primary">@cardRows.Count</span>
             </div>
             <div class="card-body border-bottom">
@@ -157,10 +186,10 @@
                     </div>
                     <div class="col-12 col-md-3">
                         <label class="form-label small">AD Benutzer</label>
-                        <input class="form-control form-control-sm" @bind="newCardAssignedUser" />
+                        <input class="form-control form-control-sm" value="@newCardAssignedUser" @oninput="OnNewCardAssignedUserInputAsync" list="vpn-ad-user-suggestions" />
                     </div>
                     <div class="col-12 col-md-2">
-                        <label class="form-label small">PIN</label>
+                        <label class="form-label small">PUK</label>
                         <input class="form-control form-control-sm" @bind="newCardPin" />
                     </div>
                     <div class="col-12 col-md-4">
@@ -169,7 +198,7 @@
                     </div>
                     <div class="col-12">
                         <button class="btn btn-sm btn-primary" @onclick="AddCardAsync" disabled="@inventoryBusy">
-                            <i class="bi bi-plus-circle me-1"></i>Karte hinzufügen
+                            <i class="bi bi-plus-circle me-1"></i>Chipkarte hinzufügen
                         </button>
                     </div>
                 </div>
@@ -178,9 +207,9 @@
                 <table class="table table-sm table-striped mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>Karte</th>
+                            <th>Chipkarte</th>
                             <th>AD Benutzer</th>
-                            <th>PIN</th>
+                            <th>PUK</th>
                             <th>Notiz</th>
                             <th>Ausgegeben</th>
                             <th style="width:130px"></th>
@@ -189,15 +218,15 @@
                     <tbody>
                         @if (cardRows.Count == 0)
                         {
-                            <tr><td colspan="6" class="text-muted text-center py-3">Keine Karten vorhanden.</td></tr>
+                            <tr><td colspan="6" class="text-muted text-center py-3">Keine Chipkarten vorhanden.</td></tr>
                         }
                         else
                         {
-                            @foreach (var row in cardRows)
+                            @foreach (var row in PagedCardRows)
                             {
                                 <tr>
                                     <td><input class="form-control form-control-sm" @bind="row.CardNumber" /></td>
-                                    <td><input class="form-control form-control-sm" @bind="row.AssignedAdUser" /></td>
+                                    <td><input class="form-control form-control-sm" value="@row.AssignedAdUser" @oninput="e => OnCardAssignedUserInputAsync(row, e)" list="vpn-ad-user-suggestions" /></td>
                                     <td><input class="form-control form-control-sm" @bind="row.Pin" /></td>
                                     <td><input class="form-control form-control-sm" @bind="row.Notes" /></td>
                                     <td>@FormatDate(row.IssuedAt)</td>
@@ -211,6 +240,16 @@
                     </tbody>
                 </table>
             </div>
+            @if (cardRows.Count > PageSize)
+            {
+                <div class="card-footer d-flex justify-content-between align-items-center py-2">
+                    <small class="text-muted">Seite @cardPage von @CardTotalPages</small>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" @onclick="() => ChangeCardPage(-1)" disabled="@(cardPage <= 1)">Zurück</button>
+                        <button class="btn btn-outline-secondary" @onclick="() => ChangeCardPage(1)" disabled="@(cardPage >= CardTotalPages)">Weiter</button>
+                    </div>
+                </div>
+            }
         </div>
     </div>
 </div>
@@ -350,6 +389,13 @@ else
     </div>
 }
 
+<datalist id="vpn-ad-user-suggestions">
+    @foreach (var suggestion in adUserSuggestions)
+    {
+        <option value="@suggestion.SamAccountName">@suggestion.DisplayName (@GetUpn(suggestion))</option>
+    }
+</datalist>
+
 @code {
     private bool isLoading;
     private bool isAdmin;
@@ -370,6 +416,24 @@ else
     private string newCardAssignedUser = string.Empty;
     private string newCardPin = string.Empty;
     private string newCardNotes = string.Empty;
+    private int editableTotalLicenses;
+
+    private List<AdUserResult> adUserSuggestions = new();
+
+    private const int PageSize = 10;
+    private int readerPage = 1;
+    private int cardPage = 1;
+
+    private int ReaderTotalPages => Math.Max(1, (int)Math.Ceiling(readerRows.Count / (double)PageSize));
+    private int CardTotalPages => Math.Max(1, (int)Math.Ceiling(cardRows.Count / (double)PageSize));
+
+    private IEnumerable<VpnSmartcardReader> PagedReaderRows => readerRows
+        .Skip((readerPage - 1) * PageSize)
+        .Take(PageSize);
+
+    private IEnumerable<VpnAccessCard> PagedCardRows => cardRows
+        .Skip((cardPage - 1) * PageSize)
+        .Take(PageSize);
 
     private readonly HashSet<string> selectedUsers = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<EncodedVpnUser> encodedResults = new();
@@ -388,8 +452,35 @@ else
     private async Task LoadInventoryAsync()
     {
         inventory = await VpnInventoryService.GetOverviewAsync();
+        editableTotalLicenses = inventory.TotalLicenses;
         readerRows = await VpnInventoryService.GetReadersAsync();
         cardRows = await VpnInventoryService.GetCardsAsync();
+        EnsureValidPages();
+    }
+
+    private void ChangeReaderPage(int delta)
+    {
+        readerPage = Math.Clamp(readerPage + delta, 1, ReaderTotalPages);
+    }
+
+    private void ChangeCardPage(int delta)
+    {
+        cardPage = Math.Clamp(cardPage + delta, 1, CardTotalPages);
+    }
+
+    private void EnsureValidPages()
+    {
+        readerPage = Math.Clamp(readerPage, 1, ReaderTotalPages);
+        cardPage = Math.Clamp(cardPage, 1, CardTotalPages);
+    }
+
+    private async Task SaveTotalLicensesAsync()
+    {
+        await RunInventoryActionAsync(async () =>
+        {
+            editableTotalLicenses = await VpnInventoryService.UpdateTotalLicensesAsync(editableTotalLicenses);
+            await WriteVpnAuditAsync("Lizenzanzahl aktualisiert", $"Neue Anzahl: {editableTotalLicenses}");
+        }, "Lizenzanzahl gespeichert.");
     }
 
     private async Task AddReaderAsync()
@@ -408,6 +499,7 @@ else
         await RunInventoryActionAsync(async () =>
         {
             await VpnInventoryService.AddReaderAsync(entity);
+            await WriteVpnAuditAsync("Smartcardreader angelegt", DescribeReader(entity));
             newReaderSerial = string.Empty;
             newReaderAssignedUser = string.Empty;
             newReaderDescription = string.Empty;
@@ -417,12 +509,21 @@ else
     private async Task SaveReaderAsync(VpnSmartcardReader row)
     {
         row.AssignedAt = string.IsNullOrWhiteSpace(row.AssignedAdUser) ? null : row.AssignedAt ?? DateTime.Now;
-        await RunInventoryActionAsync(async () => await VpnInventoryService.UpdateReaderAsync(row), "Reader gespeichert.");
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.UpdateReaderAsync(row);
+            await WriteVpnAuditAsync("Smartcardreader aktualisiert", DescribeReader(row));
+        }, "Reader gespeichert.");
     }
 
     private async Task DeleteReaderAsync(int id)
     {
-        await RunInventoryActionAsync(() => VpnInventoryService.DeleteReaderAsync(id), "Reader gelöscht.");
+        var reader = readerRows.FirstOrDefault(x => x.Id == id);
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.DeleteReaderAsync(id);
+            await WriteVpnAuditAsync("Smartcardreader gelöscht", reader is null ? $"ID: {id}" : DescribeReader(reader));
+        }, "Reader gelöscht.");
     }
 
     private async Task AddCardAsync()
@@ -442,23 +543,97 @@ else
         await RunInventoryActionAsync(async () =>
         {
             await VpnInventoryService.AddCardAsync(entity);
+            await WriteVpnAuditAsync("Chipkarte angelegt", DescribeCard(entity));
             newCardNumber = string.Empty;
             newCardAssignedUser = string.Empty;
             newCardPin = string.Empty;
             newCardNotes = string.Empty;
-        }, "Karte angelegt.");
+        }, "Chipkarte angelegt.");
     }
 
     private async Task SaveCardAsync(VpnAccessCard row)
     {
         row.IssuedAt = string.IsNullOrWhiteSpace(row.AssignedAdUser) ? null : row.IssuedAt ?? DateTime.Now;
-        await RunInventoryActionAsync(async () => await VpnInventoryService.UpdateCardAsync(row), "Karte gespeichert.");
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.UpdateCardAsync(row);
+            await WriteVpnAuditAsync("Chipkarte aktualisiert", DescribeCard(row));
+        }, "Chipkarte gespeichert.");
     }
 
     private async Task DeleteCardAsync(int id)
     {
-        await RunInventoryActionAsync(() => VpnInventoryService.DeleteCardAsync(id), "Karte gelöscht.");
+        var card = cardRows.FirstOrDefault(x => x.Id == id);
+        await RunInventoryActionAsync(async () =>
+        {
+            await VpnInventoryService.DeleteCardAsync(id);
+            await WriteVpnAuditAsync("Chipkarte gelöscht", card is null ? $"ID: {id}" : DescribeCard(card));
+        }, "Chipkarte gelöscht.");
     }
+
+    private async Task OnNewReaderAssignedUserInputAsync(ChangeEventArgs e)
+    {
+        newReaderAssignedUser = e.Value?.ToString() ?? string.Empty;
+        await UpdateAdUserSuggestionsAsync(newReaderAssignedUser);
+    }
+
+    private async Task OnReaderAssignedUserInputAsync(VpnSmartcardReader row, ChangeEventArgs e)
+    {
+        row.AssignedAdUser = e.Value?.ToString() ?? string.Empty;
+        await UpdateAdUserSuggestionsAsync(row.AssignedAdUser);
+    }
+
+    private async Task OnNewCardAssignedUserInputAsync(ChangeEventArgs e)
+    {
+        newCardAssignedUser = e.Value?.ToString() ?? string.Empty;
+        await UpdateAdUserSuggestionsAsync(newCardAssignedUser);
+    }
+
+    private async Task OnCardAssignedUserInputAsync(VpnAccessCard row, ChangeEventArgs e)
+    {
+        row.AssignedAdUser = e.Value?.ToString() ?? string.Empty;
+        await UpdateAdUserSuggestionsAsync(row.AssignedAdUser);
+    }
+
+    private async Task UpdateAdUserSuggestionsAsync(string search)
+    {
+        if (string.IsNullOrWhiteSpace(search) || search.Length < 2)
+        {
+            adUserSuggestions.Clear();
+            return;
+        }
+
+        adUserSuggestions = (await AdService.SearchUsersAsync(search))
+            .Where(u => OuAccessService.CanAccessUser(u.DistinguishedName, isAdmin))
+            .OrderBy(u => u.DisplayName)
+            .Take(10)
+            .ToList();
+    }
+
+    private async Task WriteVpnAuditAsync(string actionName, string details)
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var performedBy = authState.User.Identity?.Name
+            ?? authState.User.FindFirstValue(ClaimTypes.Name)
+            ?? "Unbekannt";
+
+        await AuditLogService.LogAsync(new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            Action = AuditAction.VpnInventoryChange,
+            PerformedBy = performedBy,
+            TargetUser = "VPN-Inventar",
+            ExecutedVia = "AdminAssistant",
+            Success = true,
+            Details = $"{actionName} | {details}"
+        });
+    }
+
+    private static string DescribeReader(VpnSmartcardReader reader) =>
+        $"Seriennummer: {reader.SerialNumber} | AD Benutzer: {reader.AssignedAdUser ?? "-"} | Beschreibung: {reader.Description ?? "-"}";
+
+    private static string DescribeCard(VpnAccessCard card) =>
+        $"Kartennummer: {card.CardNumber} | AD Benutzer: {card.AssignedAdUser ?? "-"} | PUK: {card.Pin ?? "-"} | Notiz: {card.Notes ?? "-"}";
 
     private async Task RunInventoryActionAsync(Func<Task> action, string successMessage)
     {

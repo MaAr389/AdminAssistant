@@ -19,15 +19,25 @@ public class VpnInventoryService : IVpnInventoryService
     {
         var assignedReaders = await _db.VpnSmartcardReaders.CountAsync(x => !string.IsNullOrWhiteSpace(x.AssignedAdUser));
         var assignedCards = await _db.VpnAccessCards.CountAsync(x => !string.IsNullOrWhiteSpace(x.AssignedAdUser));
+        var settings = await GetOrCreateSettingsAsync();
 
         return new VpnInventoryOverview
         {
-            TotalLicenses = DefaultTotal,
-            TotalReaders = DefaultTotal,
-            TotalCards = DefaultTotal,
+            TotalLicenses = settings.TotalLicenses,
+            TotalReaders = settings.TotalLicenses,
+            TotalCards = settings.TotalLicenses,
             AssignedReaders = assignedReaders,
             AssignedCards = assignedCards
         };
+    }
+
+    public async Task<int> UpdateTotalLicensesAsync(int totalLicenses)
+    {
+        var sanitizedTotal = Math.Max(0, totalLicenses);
+        var settings = await GetOrCreateSettingsAsync();
+        settings.TotalLicenses = sanitizedTotal;
+        await _db.SaveChangesAsync();
+        return settings.TotalLicenses;
     }
 
     public Task<List<VpnSmartcardReader>> GetReadersAsync() =>
@@ -86,6 +96,18 @@ public class VpnInventoryService : IVpnInventoryService
 
         _db.VpnAccessCards.Remove(entity);
         await _db.SaveChangesAsync();
+    }
+
+    private async Task<VpnInventorySettings> GetOrCreateSettingsAsync()
+    {
+        var settings = await _db.VpnInventorySettings.FirstOrDefaultAsync();
+        if (settings != null)
+            return settings;
+
+        settings = new VpnInventorySettings { TotalLicenses = DefaultTotal };
+        _db.VpnInventorySettings.Add(settings);
+        await _db.SaveChangesAsync();
+        return settings;
     }
 
     private static void NormalizeReader(VpnSmartcardReader reader)
