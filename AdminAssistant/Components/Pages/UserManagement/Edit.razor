@@ -11,6 +11,7 @@
 @inject AuthenticationStateProvider AuthProvider
 @inject NavigationManager Navigation
 @inject IOuAccessService OuAccessService
+@inject IAuthorizationService AuthorizationService
 
 <PageTitle>Benutzer bearbeiten</PageTitle>
 
@@ -325,11 +326,8 @@ else
             var authState = await AuthProvider.GetAuthenticationStateAsync();
             var principal = authState.User;
 
-            // Admin-Gruppen hier bei Bedarf anpassen
-            var isAdminAssistant = principal.IsInRole(@"ASD\GG_ADMIN_SP");
-            //var isAdminAssistant = principal.IsInRole(@"SP\GRP_Admin_AdminAssistant");
-
-            var isAdmin = isAdminAssistant;
+            var adminAuthorization = await AuthorizationService.AuthorizeAsync(principal, "AdminOnly");
+            var isAdmin = adminAuthorization.Succeeded;
 
             if (isAdmin)
             {
