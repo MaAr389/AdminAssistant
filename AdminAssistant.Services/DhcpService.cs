@@ -146,6 +146,31 @@ public class DhcpService : IDhcpService
         });
     }
 
+    public async Task<bool> RemoveLeaseAsync(string scopeId, string ipAddress, string performedBy)
+    {
+        return await Task.Run(() =>
+        {
+            using var ps = CreateRemotePs();
+            ps.AddCommand("Remove-DhcpServerv4Lease")
+              .AddParameter("ScopeId", scopeId)
+              .AddParameter("IPAddress", ipAddress)
+              .AddParameter("Confirm", false);
+
+            ps.Invoke();
+
+            if (ps.HadErrors)
+            {
+                _logger.LogError(
+                    "Remove-DhcpServerv4Lease Fehler (Scope {Scope}, IP {Ip}): {Errors}",
+                    scopeId, ipAddress,
+                    string.Join(" | ", ps.Streams.Error.Select(e => e.ToString())));
+                return false;
+            }
+
+            return true;
+        });
+    }
+
     // ─── Reservierungen ─────────────────────────────────────────────────────
 
     public async Task<IEnumerable<DhcpReservation>> GetReservationsAsync(string scopeId)
